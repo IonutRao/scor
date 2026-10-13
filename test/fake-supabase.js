@@ -73,6 +73,60 @@
           return { data: { subscription: { unsubscribe: function () { listeners = listeners.filter(function (x) { return x !== fn; }); } } } };
         }
       },
+      /* Fisierele: aceleasi apeluri si aceleasi forme de raspuns ca in biblioteca adevarata, catre serverul de test. */
+      storage: {
+        from: function (bucket) {
+          function headers(extra) {
+            var s = read(), h = { apikey: key, Authorization: 'Bearer ' + ((s && s.access_token) || key) };
+            for (var k in extra) h[k] = extra[k];
+            return h;
+          }
+          function apiError(status, j) {
+            j = j || {};
+            return { name: 'StorageApiError', message: j.message || 'HTTP ' + status, status: status, statusCode: j.statusCode || String(status), error: j.error || '' };
+          }
+          function netError(err) {
+            return { name: 'StorageUnknownError', message: String((err && err.message) || err), originalError: err };
+          }
+          function send(method, path, opts) {
+            opts.method = method;
+            return fetch(url + '/storage/v1/object/' + path, opts);
+          }
+          function json(res) {
+            return res.text().then(function (t) { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } });
+          }
+          return {
+            upload: function (path, body, o) {
+              o = o || {};
+              /* Ca biblioteca adevarata: pentru un Blob, felul fisierului este cel al Blob-ului, nu cel din optiuni. */
+              var type = body instanceof Blob ? (body.type || 'application/octet-stream') : (o.contentType || 'text/plain;charset=UTF-8');
+              return send('POST', bucket + '/' + path, { headers: headers({ 'Content-Type': type }), body: body }).then(function (res) {
+                return json(res).then(function (j) {
+                  if (!res.ok) return { data: null, error: apiError(res.status, j) };
+                  return { data: { path: path, id: j && j.Id, fullPath: bucket + '/' + path }, error: null };
+                });
+              }, function (err) { return { data: null, error: netError(err) }; });
+            },
+            download: function (path) {
+              return send('GET', bucket + '/' + path, { headers: headers() }).then(function (res) {
+                /* Ca biblioteca adevarata: la descarcare, un raspuns de eroare ajunge neschimbat in originalError. */
+                if (!res.ok) return { data: null, error: { name: 'StorageUnknownError', message: '{}', originalError: res } };
+                return res.blob().then(function (b) { return { data: b, error: null }; });
+              }, function (err) { return { data: null, error: netError(err) }; });
+            },
+            remove: function (paths) {
+              return send('DELETE', bucket, { headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefixes: paths }) }).then(function (res) {
+                return json(res).then(function (j) { return res.ok ? { data: j, error: null } : { data: null, error: apiError(res.status, j) }; });
+              }, function (err) { return { data: null, error: netError(err) }; });
+            },
+            list: function (prefix, o) {
+              return send('POST', 'list/' + bucket, { headers: headers({ 'Content-Type': 'application/json' }), body: JSON.stringify({ prefix: prefix || '', limit: (o && o.limit) || 100, offset: (o && o.offset) || 0 }) }).then(function (res) {
+                return json(res).then(function (j) { return res.ok ? { data: j, error: null } : { data: null, error: apiError(res.status, j) }; });
+              }, function (err) { return { data: null, error: netError(err) }; });
+            }
+          };
+        }
+      },
       rpc: function (name, args) {
         var s = read();
         return call('/rest/v1/rpc/' + name, args, s && s.access_token).then(function (r) {

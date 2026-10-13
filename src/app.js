@@ -5,13 +5,13 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.3';
+  var VERSION = '0.4';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
   var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume'] : ['plus', 'minus', 'detalii']);
-  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii. */
-  var NOTES_FROM = 3;
+  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, respectiv poze. */
+  var NOTES_FROM = 3, PHOTOS_FROM = 4;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
      si la cat timp se improspateaza singur cat e pe ecran. */
@@ -36,17 +36,35 @@
     starLine: '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke-linejoin="round"><path d="' + STAR + '"/></svg>',
     close: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>',
     x: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
-    note: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h9"/></svg>'
+    note: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h9"/></svg>',
+    photo: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3.5 16.5l5-5 4 4 2.5-2.5 5.5 5.5"/><circle cx="15.5" cy="9.5" r="1.2" fill="currentColor"/></svg>'
   };
 
   var data, lang, route = 'azi';
   /* Starea contului: local (fara server), loading, out (neautentificat), name (fara nume ales), in. */
   var auth = BACKEND ? 'loading' : 'local';
-  var add = { type: 'plus', favId: null, name: '', pts: 10, keep: false, pub: false, note: '', noteOpen: false };
-  /* Ecranul pe care se scriu sau se schimba detaliile unei activitati deja notate, si ecranul de pe care s-a ajuns acolo. */
-  var noteForm = { id: null, value: '', back: 'azi' };
+  /* pic: poza aleasa pentru activitatea noua, deja micsorata ({name, blob, w, h}); picBusy: una e in lucru. */
+  var add = { type: 'plus', favId: null, name: '', pts: 10, keep: false, pub: false, note: '', noteOpen: false, pic: null, picBusy: false };
+  /* Ecranul pe care se scriu sau se schimba detaliile si poza unei activitati deja notate, si ecranul de pe care s-a ajuns acolo.
+     photo: numele pozei pe care activitatea o are acum; pic: una noua, aleasa aici; drop: omul a scos poza. */
+  var noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
   /* Activitatile din flux ale caror detalii sunt deschise acum. */
   var openNotes = {};
+  /* Pozele aduse pentru afisare in sesiunea aceasta: cheie -> { state: 'loading' | 'ok' | 'error', url }.
+     Cand se aduna mai mult de SHOTS_MAX, cele mai vechi care nu sunt pe ecran se elibereaza. */
+  var shots = {}, SHOTS_MAX = 40;
+  /* Formularul pentru care omul alege acum o poza din telefon. */
+  var picFor = null;
+  /* Incarcarea pozelor in cont: una pe rand. pumping tine numele celei aflate pe drum ('*' cat se sterg fisiere);
+     pumpSeq numara cererile, ca raspunsul uneia date pierduta sa nu mai fie luat in seama; pumpFails numara incercarile
+     cazute la rand. closing: contul se sterge chiar acum. */
+  var pumping = '', pumpTimer = null, pumpFails = 0, pumpSeq = 0, closing = false;
+  /* Cat se asteapta raspunsul unei cereri catre locul de poze inainte ca ea sa fie data pierduta, si cat de proaspata trebuie
+     sa fie starea contului ca sa se stearga fisiere din el. */
+  var PUMP_PATIENCE = Math.max(1000, Number(CFG.pumpPatience) || 180000), FRESH = 20000;
+  /* Ultimul raspuns de eroare al locului de poze, aratat in Profil ca sa se poata afla de ce nu merge o poza;
+     pumpOffline: ultima incercare cazuta a fost din lipsa de legatura, nu dintr-un refuz. */
+  var photoErr = '', pumpOffline = false;
   var authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
   var nameForm = { value: '', busy: false, error: '' };
   /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
@@ -57,6 +75,9 @@
   var appEl, viewEl, navEl, toastEl, dlg;
   var toastTimer = null, dlgOk = null, dlgExtra = null, dlgLink = null, dlgOpener = null, shownDay = '';
   var syncing = false, syncAgain = false, syncTimer = null, syncErr = '', syncFails = 0, inflight = {};
+  /* Creste la fiecare iesire din cont si la fiecare intrare in alt cont: un raspuns pornit intr-o sesiune nu mai are ce
+     schimba in urmatoarea, nici daca acelasi om a intrat din nou. */
+  var session = 0;
 
   /* ---------- mici ajutoare ---------- */
 
@@ -153,7 +174,8 @@
   function fresh() {
     return {
       v: 2, lang: null, demo: false, uid: null, name: '', email: '', entries: [], favs: defaultFavs(),
-      favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [] }, lastSync: 0, pubDefault: false, sv: 0
+      favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
+      lastSync: 0, pubDefault: false, sv: 0
     };
   }
 
@@ -182,6 +204,12 @@
     d.favsSynced = d.favsSynced || 0;
     d.outbox = d.outbox && Array.isArray(d.outbox.del) && Array.isArray(d.outbox.vis) ? d.outbox : { del: [], vis: [] };
     if (!Array.isArray(d.outbox.note)) d.outbox.note = [];
+    var okName = function (n) { return typeof n === 'string' && PHOTO.NAME.test(n); };
+    d.outbox.photo = (Array.isArray(d.outbox.photo) ? d.outbox.photo : []).filter(function (op) {
+      return !!op && typeof op.id === 'string' && (op.photo === null || okName(op.photo));
+    });
+    d.outbox.gone = (Array.isArray(d.outbox.gone) ? d.outbox.gone : []).filter(okName);
+    d.uploads = (Array.isArray(d.uploads) ? d.uploads : []).filter(okName);
     d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
     d.pubDefault = !!d.pubDefault;
@@ -193,6 +221,7 @@
       e.cheers = e.cheers > 0 ? e.cheers : 0;
       var note = typeof e.note === 'string' ? L.cleanNote(e.note) : '';
       if (note) e.note = note; else delete e.note;
+      if (typeof e.photo !== 'string' || !PHOTO.NAME.test(e.photo)) delete e.photo;
     });
     d.favs = cleanFavs(d.favs);
     return d;
@@ -244,13 +273,34 @@
   function myCheers() { return data.entries.reduce(function (s, e) { return s + (e.cheers || 0); }, 0); }
   /* Detaliile se pot scrie pe dispozitiv oricand; cu cont, doar daca baza de date a fost adusa la versiunea care le pastreaza. */
   function notesOn() { return !BACKEND || data.sv >= NOTES_FROM; }
+  /* Pozele stau in cont, deci exista doar cu cont si cu baza de date adusa la versiunea care le cunoaste. */
+  function photosOn() { return BACKEND && data.sv >= PHOTOS_FROM; }
 
   /* ---------- salvarea in cont ---------- */
 
   function pendingCount() {
-    var n = data.outbox.del.length + data.outbox.vis.length + data.outbox.note.length + (data.favsRev !== data.favsSynced ? 1 : 0);
+    var n = data.outbox.del.length + data.outbox.vis.length + data.outbox.note.length + data.outbox.photo.length +
+      (data.favsRev !== data.favsSynced ? 1 : 0);
     for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1) n++;
     return n;
+  }
+
+  /* Schimbarile de poze care pot pleca acum spre cont: fisierul a ajuns deja acolo, iar activitatea este cunoscuta de cont
+     sau pleaca in acelasi drum (ids). Fara ids: cele care pot pleca acum sau odata cu activitatea lor. */
+  function photoOps(ids) {
+    return data.outbox.photo.filter(function (op) {
+      var e = findEntry(op.id);
+      if (!e || (op.photo && data.uploads.indexOf(op.photo) >= 0)) return false;
+      return e.sync !== 1 || !ids || !!ids[e.id];
+    });
+  }
+
+  /* Mai este ceva care poate pleca chiar acum? O poza al carei fisier inca nu a ajuns in cont asteapta incarcarea,
+     nu un drum nou pana la server. */
+  function canSend() {
+    if (data.outbox.del.length || data.outbox.vis.length || data.outbox.note.length || data.favsRev !== data.favsSynced) return true;
+    for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1) return true;
+    return photoOps(null).length > 0;
   }
 
   function queueSync(delay) {
@@ -264,12 +314,17 @@
     if (!BACKEND || auth !== 'in') return;
     if (syncing) { syncAgain = true; return; }
     clearTimeout(syncTimer);
+    /* Un raspuns care soseste dupa iesirea din cont, sau dupa intrarea in altul, nu mai are ce schimba aici. */
+    var uid = data.uid, mine = session;
+    function late() { return mine !== session || data.uid !== uid; }
     var batch = data.entries.filter(function (e) { return e.sync === 1; }).slice(0, 300);
     var sent = {
-      ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), note: data.outbox.note.slice(),
+      ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), note: data.outbox.note.slice(), photo: [],
       rev: data.favsRev, favs: data.favsRev !== data.favsSynced
     };
     batch.forEach(function (e) { sent.ids[e.id] = true; });
+    /* Contul afla de o poza abia dupa ce fisierul ei a ajuns acolo, si doar pentru o activitate pe care o are sau o primeste acum. */
+    sent.photo = photoOps(sent.ids);
     inflight = sent.ids;
     syncing = true;
     var args = {
@@ -286,24 +341,35 @@
     };
     /* Un server ramas la o versiune mai veche nu cunoaste p_note; fara schimbari de detalii nu i se trimite. */
     if (sent.note.length) args.p_note = sent.note;
+    if (sent.photo.length) args.p_photo = sent.photo;
     API.rpc('sync', args).then(function (res) {
+      if (late()) return;
       applySync(res, sent);
       syncErr = '';
       syncFails = 0;
       /* Ce tocmai a plecat poate schimba fluxul: se reincarca acum sau la urmatoarea deschidere. */
-      if (batch.length || sent.del.length || sent.vis.length || sent.note.length) {
+      if (batch.length || sent.del.length || sent.vis.length || sent.note.length || sent.photo.length) {
         feed.at = 0;
         if (route === 'flux') openFeed();
       }
-    }, function (err) {
-      syncFailed(err);
+      /* Contul e la zi: pot pleca pozele care asteapta si se pot sterge cele ramase fara activitate.
+         Daca incarcarile tocmai au cazut, urmatoarea incercare vine la timpul ei, nu acum. */
+      if (!pumpFails || !data.uploads.length) queuePump(0);
+    }).then(null, function (err) {
+      /* Aici ajunge si un raspuns pe care aplicatia nu l-a putut folosi, nu doar o cerere cazuta. */
+      if (!late()) syncFailed(err);
     }).then(function () {
       syncing = false;
       inflight = {};
+      if (late()) {
+        syncAgain = false;
+        if (auth === 'in') queueSync(0);
+        return;
+      }
       if (auth === 'in') {
-        if (route === 'flux') showFeed(); else if (!typing()) render();
+        if (route === 'flux') showFeed(); else if (!typing()) render(); else offerMore();
         if (syncErr) queueSync(Math.min(300000, 15000 * Math.pow(2, Math.min(syncFails, 5))));
-        else if (syncAgain || pendingCount() > 0) queueSync(300);
+        else if (syncAgain || canSend()) queueSync(300);
       } else {
         render();
       }
@@ -316,15 +382,18 @@
     data.outbox.del = data.outbox.del.filter(function (id) { return sent.del.indexOf(id) < 0; });
     data.outbox.vis = data.outbox.vis.filter(function (op) { return sent.vis.indexOf(op) < 0; });
     data.outbox.note = data.outbox.note.filter(function (op) { return sent.note.indexOf(op) < 0; });
+    data.outbox.photo = data.outbox.photo.filter(function (op) { return sent.photo.indexOf(op) < 0; });
 
-    var stillDeleting = {}, onServer = {}, next = [];
+    var stillDeleting = {}, onServer = {}, next = [], had = {};
     data.outbox.del.forEach(function (id) { stillDeleting[id] = true; });
+    data.entries.forEach(function (e) { if (e.photo) had[e.photo] = true; });
     res.entries.forEach(function (s) {
       onServer[s.id] = true;
       if (stillDeleting[s.id]) return;
       var e = { id: s.id, ts: Number(s.ts), day: s.day, type: s.type, pts: s.pts, pub: !!s.pub, cheers: s.cheers || 0, sync: 0 };
       if (s.key) e.key = s.key; else e.name = s.name;
       if (typeof s.note === 'string' && s.note) e.note = s.note;
+      if (typeof s.photo === 'string' && PHOTO.NAME.test(s.photo)) e.photo = s.photo;
       if (okItem(e)) next.push(e);
     });
     /* Ce s-a schimbat aici cat timp cererea era pe drum ramane valabil. */
@@ -337,10 +406,19 @@
         if (op.note) next[i].note = op.note; else delete next[i].note;
       }
     });
+    /* La fel pentru poze, inclusiv cele care inca asteapta sa li se incarce fisierul. */
+    data.outbox.photo.forEach(function (op) {
+      for (var i = 0; i < next.length; i++) {
+        if (next[i].id !== op.id) continue;
+        if (op.photo) next[i].photo = op.photo; else delete next[i].photo;
+      }
+    });
     data.entries.forEach(function (e) {
       if (e.sync === 1 && !onServer[e.id] && !sent.ids[e.id]) next.push(e);
     });
     data.entries = next;
+    /* O schimbare de poza pentru o activitate care nu mai exista nu mai are unde ajunge. */
+    data.outbox.photo = data.outbox.photo.filter(function (op) { return !!findEntry(op.id); });
 
     if (sent.favs) data.favsSynced = sent.rev;
     if (data.favsRev === data.favsSynced) {
@@ -348,8 +426,157 @@
       else data.favsRev++; /* contul nu are inca favoritele: pleaca la drumul urmator */
     }
     data.sv = Number(res.v) > 0 ? Number(res.v) : 0;
+    /* Pozele stiute aici pe care contul nu le mai are la nicio activitate (scoase ori inlocuite de pe alt dispozitiv, sau
+       ramase de la o activitate stearsa acolo) nu mai au de ce sa ocupe loc. Se bazeaza pe faptul ca raspunsul aduce
+       tot jurnalul; daca sync va aduce candva doar ce s-a schimbat, regula aceasta trebuie regandita. */
+    if (photosOn()) Object.keys(had).forEach(function (name) { if (!photoUsed(name)) releaseFile(name); });
     data.lastSync = Date.now();
     persist();
+  }
+
+  /* ---------- pozele: drumul fisierelor pana in cont ---------- */
+
+  /* Tine minte de ce a refuzat locul de poze o cerere. O legatura cazuta nu este un refuz. */
+  function notePhotoErr(err) {
+    if (!err || err.offline) return;
+    var txt = String(err.message || '').slice(0, 160);
+    if (err.status && txt.indexOf(String(err.status)) < 0) txt = err.status + ' ' + txt;
+    if (txt) photoErr = txt;
+  }
+
+  function queuePump(delay) {
+    if (!BACKEND || auth !== 'in') return;
+    clearTimeout(pumpTimer);
+    pumpTimer = setTimeout(pump, delay == null ? 200 : delay);
+  }
+
+  function photoUsed(name) {
+    for (var i = 0; i < data.entries.length; i++) if (data.entries[i].photo === name) return true;
+    return false;
+  }
+
+  /* O poza care nu mai e a niciunei activitati: daca nu a apucat sa plece spre cont se arunca de pe dispozitiv, si in
+     orice caz va fi stearsa si din cont dupa ce acesta afla de schimbare (putea sa ajunga acolo fara ca raspunsul sa fi
+     sosit; stergerea unui fisier care nu exista nu e o eroare). */
+  function releaseFile(name) {
+    var i = data.uploads.indexOf(name);
+    if (i >= 0 && pumping !== name) {
+      data.uploads.splice(i, 1);
+      PHOTO.del(name, true);
+    }
+    if (data.outbox.gone.indexOf(name) < 0) data.outbox.gone.push(name);
+  }
+
+  /* Poza nu mai poate ajunge in cont (s-a pierdut de pe dispozitiv sau serverul nu o primeste): activitatea ramane fara ea.
+     Contul poate avea inca la activitate poza dinainte, pe care aplicatia urmeaza sa o stearga din locul de poze; de aceea
+     afla si el ca activitatea nu mai are niciuna, altfel ar ramane cu trimitere la un fisier care nu mai exista. */
+  function dropPhoto(name) {
+    data.uploads = data.uploads.filter(function (n) { return n !== name; });
+    data.outbox.photo = data.outbox.photo.filter(function (op) { return op.photo !== name; });
+    data.entries.forEach(function (e) {
+      if (e.photo !== name) return;
+      delete e.photo;
+      data.outbox.photo = data.outbox.photo.filter(function (op) { return op.id !== e.id; });
+      data.outbox.photo.push({ id: e.id, photo: null });
+    });
+    PHOTO.del(name, true);
+    persist();
+  }
+
+  /* Trimite in cont, una cate una, pozele care asteapta. Cand nu mai are ce trimite si contul e la zi,
+     sterge de acolo fisierele care nu mai sunt ale nimanui. */
+  function pump() {
+    if (!BACKEND || auth !== 'in' || pumping || closing) return;
+    clearTimeout(pumpTimer);
+    var uid = data.uid, mine = session, my = ++pumpSeq, name = data.uploads[0], guard = null;
+    /* Raspunsul nu mai are ce schimba aici: cererea a fost data pierduta intre timp, omul a iesit din cont sau a intrat in altul. */
+    function late() { return my !== pumpSeq || mine !== session || auth !== 'in' || data.uid !== uid; }
+    function again() { queuePump(Math.min(300000, 4000 * Math.pow(2, Math.min(pumpFails, 6)))); }
+    /* O cerere porneste: tine locul ocupat. Daca nu primeste niciun raspuns in PUMP_PATIENCE, se considera cazuta si se reincearca. */
+    function begin(what) {
+      pumping = what;
+      guard = setTimeout(function () {
+        if (my !== pumpSeq) return;
+        pumpSeq++;
+        pumping = '';
+        if (mine !== session || auth !== 'in' || data.uid !== uid) return;
+        pumpFails++;
+        pumpOffline = true;
+        if (!typing() && route !== 'flux') render();
+        again();
+      }, PUMP_PATIENCE);
+    }
+    /* Cererea s-a incheiat: elibereaza locul, daca mai este al ei. Intoarce false cand raspunsul nu mai are ce schimba. */
+    function settle() {
+      if (my === pumpSeq) { clearTimeout(guard); pumping = ''; }
+      return !late();
+    }
+    if (name) {
+      begin(name);
+      PHOTO.get(name).then(function (blob) {
+        if (!blob) return 'lost';
+        return API.photoUpload(uid + '/' + name, blob);
+      }).then(function (r) {
+        if (!settle()) return;
+        pumpFails = 0;
+        if (r !== 'lost') photoErr = '';
+        if (r === 'lost') {
+          dropPhoto(name);
+          toast(tr('photoLost'));
+        } else {
+          data.uploads = data.uploads.filter(function (n) { return n !== name; });
+          PHOTO.del(name);
+          if (!photoUsed(name) && data.outbox.gone.indexOf(name) < 0) data.outbox.gone.push(name);
+          persist();
+        }
+        if (!typing() && route !== 'flux') render();
+        queueSync(0);
+        queuePump(0);
+      }, function (err) {
+        if (!settle()) return;
+        var st = err.offline ? 0 : Number(err.status) || 0;
+        pumpOffline = st === 0;
+        notePhotoErr(err);
+        /* Prea mare, sau alt fel de fisier decat cel primit: raspunsul nu se schimba la a doua incercare, deci se renunta la poza.
+           Orice alt raspuns (o legatura cazuta, un server care nu raspunde, un refuz care poate tine de o stare trecatoare a
+           contului sau de o baza de date nepregatita) se reincearca oricat, cu motivul aratat in Profil. */
+        if (st === 413 || st === 415) {
+          /* Poza care bloca randul a iesit din el: ce urmeaza porneste de la zero, fara pauzele adunate de ea. */
+          pumpFails = 0;
+          dropPhoto(name);
+          if (!typing() && route !== 'flux') render();
+          toast(tr('photoRejected'));
+          queueSync(0);
+          queuePump(0);
+          return;
+        }
+        pumpFails++;
+        if (!typing() && route !== 'flux') render();
+        again();
+      });
+      return;
+    }
+    /* O poza pe care o activitate o foloseste nu se sterge, orice ar scrie pe lista de curatenie. Hotararea se ia doar
+       cu o stare proaspata a contului: daca ultimul drum e vechi, intai se face unul nou, care porneste din nou de aici. */
+    var gone = data.outbox.gone.filter(function (n) { return !photoUsed(n); });
+    if (gone.length !== data.outbox.gone.length) { data.outbox.gone = gone.slice(); persist(); }
+    if (!gone.length || syncing || pendingCount() > 0) return;
+    if (Date.now() - data.lastSync > FRESH) { queueSync(0); return; }
+    begin('*');
+    API.photoRemove(gone.map(function (n) { return uid + '/' + n; })).then(function () {
+      if (!settle()) return;
+      pumpFails = 0;
+      data.outbox.gone = data.outbox.gone.filter(function (n) { return gone.indexOf(n) < 0; });
+      persist();
+      /* Ce s-a adunat intre timp porneste acum. */
+      if (data.uploads.length || data.outbox.gone.length) queuePump(0);
+    }, function (err) {
+      if (!settle()) return;
+      pumpFails++;
+      pumpOffline = !err || !!err.offline || !err.status;
+      notePhotoErr(err);
+      again();
+    });
   }
 
   function syncFailed(err) {
@@ -392,6 +619,9 @@
     render();
     focusTitle();
     queueSync(0);
+    queuePump(600);
+    /* Pe dispozitiv raman doar pozele care inca asteapta sa plece spre cont. */
+    PHOTO.keep(data.uploads.slice());
     if (route === 'flux') openFeed();
   }
 
@@ -404,8 +634,11 @@
       var keep = data.lang;
       data = fresh();
       data.lang = keep;
+      session++;
       openDays = {};
       feed = newFeed();
+      forgetShots();
+      PHOTO.clear();
     }
     data.uid = u.id;
     data.email = u.email;
@@ -532,13 +765,24 @@
     clearTimeout(syncTimer);
     data = fresh();
     data.lang = keep;
+    session++;
     persist();
     auth = 'out';
     authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
     feed = newFeed();
     openDays = {};
     openNotes = {};
-    noteForm = { id: null, value: '', back: 'azi' };
+    noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
+    clearTimeout(pumpTimer);
+    pumping = '';
+    pumpSeq++;
+    pumpFails = 0;
+    pumpOffline = false;
+    photoErr = '';
+    closing = false;
+    picFor = null;
+    forgetShots();
+    PHOTO.clear();
     syncErr = '';
     route = 'azi';
     try { window.history.replaceState(null, '', '#azi'); } catch (e) { /* merge si fara istoric */ }
@@ -547,7 +791,7 @@
   }
 
   function askSignOut() {
-    var n = pendingCount();
+    var n = pendingCount() + data.outbox.gone.length;
     if (!n) { doSignOut(); return; }
     openDialog({
       title: tr('signOutTitle'), body: tr('signOutPending', { x: count(n, tr('changeForms')) }),
@@ -559,10 +803,53 @@
     openDialog({
       title: tr('deleteTitle'), body: tr('deleteBody'), ok: tr('deleteAccount'), cancel: tr('cancel'),
       onOk: function () {
-        API.rpc('delete_my_account').then(function () {
+        /* Pozele nu stau in baza de date, deci nu dispar odata cu contul: se sterg intai ele, toate cate sunt in dosarul lui.
+           Cat dureaza, nicio poza noua nu mai pleaca spre cont, iar una aflata chiar acum pe drum este asteptata sa ajunga.
+           Daca baza de date cunoaste pozele se afla acum, de la ea, nu din ce a retinut dispozitivul. Daca intre timp omul
+           a iesit din cont (sau a intrat in altul), nimic din ce urmeaza nu se mai face. Odata pozele sterse, stergerea
+           contului se mai incearca de cateva ori, ca sa nu ramana un cont ale carui activitati trimit la poze disparute. */
+        if (closing) return;
+        var uid = data.uid, mine = session, safety;
+        function stale() { return !closing || mine !== session || data.uid !== uid; }
+        function wait(ms) { return new Promise(function (done) { setTimeout(done, ms); }); }
+        function idle(tries) {
+          if (!pumping || tries <= 0) return Promise.resolve();
+          return wait(250).then(function () { return idle(tries - 1); });
+        }
+        function finish(tries) {
+          if (stale()) throw new Error('left');
+          return API.rpc('delete_my_account').then(null, function (err) {
+            if (tries <= 0 || stale()) throw err;
+            return wait(2000).then(function () { return finish(tries - 1); });
+          });
+        }
+        function done() {
+          clearTimeout(safety);
+          closing = false;
+        }
+        closing = true;
+        clearTimeout(pumpTimer);
+        /* O cerere ramasa fara raspuns nu poate tine pozele pe loc la nesfarsit. */
+        safety = setTimeout(function () { if (closing && mine === session) { closing = false; queuePump(); } }, 5 * 60000);
+        toast(tr('wait'));
+        idle(80).then(function () {
+          if (stale()) throw new Error('left');
+          return API.rpc('sync', {});
+        }).then(function (res) {
+          if (stale()) throw new Error('left');
+          if (!(Number(res && res.v) >= PHOTOS_FROM)) return null;
+          return API.photoList(uid).then(function (names) {
+            if (stale()) throw new Error('left');
+            return API.photoRemove(names.map(function (n) { return uid + '/' + n; }));
+          });
+        }).then(function () { return finish(3); }).then(function () {
+          done();
           doSignOut();
           toast(tr('accountDeleted'));
         }, function (err) {
+          if (err && err.message === 'left') { clearTimeout(safety); return; }
+          done();
+          queuePump();
           toast(tr(err.offline ? 'errOffline' : 'errGeneric'));
         });
       }
@@ -753,7 +1040,7 @@
   }
 
   function pendingBanner() {
-    if (!BACKEND || !syncErr) return '';
+    if (!BACKEND || !(syncErr || pumpFails)) return '';
     var n = pendingCount();
     if (!n) return '';
     return '<p class="notice" id="pending">' + esc(tr('pendingNote', { x: count(n, tr('changeForms')) })) + '</p>';
@@ -770,6 +1057,154 @@
      Spatiul de dinainte nu se rupe, ca semnul sa nu ajunga singur pe randul urmator. */
   function noteMark() { return '\u00A0<span class="note-ic">' + ICON.note + '<span class="sr">' + esc(tr('hasDetails')) + '</span></span>'; }
 
+  function photoMark() { return '\u00A0<span class="note-ic">' + ICON.photo + '<span class="sr">' + esc(tr('hasPhoto')) + '</span></span>'; }
+  function marks(x) { return (x.note ? noteMark() : '') + (x.photo ? photoMark() : ''); }
+
+  /* Porneste aducerea unei poze pentru afisare, o singura data. Pozele proprii se iau de pe dispozitiv cat timp mai sunt acolo. */
+  function needShot(key, path) {
+    if (shots[key]) return;
+    trimShots();
+    shots[key] = { state: 'loading', url: '' };
+    var name = path.split('/').pop(), mine = path.indexOf(data.uid + '/') === 0;
+    (mine ? PHOTO.get(name).then(null, function () { return null; }) : Promise.resolve(null)).then(function (blob) {
+      return blob || API.photoGet(path);
+    }).then(function (blob) {
+      if (!blob) throw new Error('no_photo');
+      return { state: 'ok', url: URL.createObjectURL(blob) };
+    }).then(null, function () {
+      return { state: 'error', url: '' };
+    }).then(function (st) {
+      /* Intre timp omul a putut iesi din cont: poza nu mai este de aratat. */
+      if (!shots[key] || shots[key].state !== 'loading') { if (st.url) URL.revokeObjectURL(st.url); return; }
+      shots[key] = st;
+      shotReady(key);
+    });
+  }
+
+  function dropShot(key) {
+    if (shots[key] && shots[key].url) { try { URL.revokeObjectURL(shots[key].url); } catch (e) { /* nimic de eliberat */ } }
+    delete shots[key];
+  }
+
+  function trimShots() {
+    var keys = Object.keys(shots), extra = keys.length - SHOTS_MAX + 1, live = {}, i;
+    if (extra <= 0) return;
+    var boxes = document.querySelectorAll('.shot');
+    for (i = 0; i < boxes.length; i++) live[boxes[i].getAttribute('data-shot')] = true;
+    feed.items.forEach(function (it) { if (it.photo) live[it.photo] = true; });
+    for (i = 0; i < keys.length && extra > 0; i++) {
+      if (live[keys[i]] || shots[keys[i]].state === 'loading') continue;
+      dropShot(keys[i]);
+      extra--;
+    }
+  }
+
+  /* Poza aleasa intr-un formular a devenit poza unei activitati: imaginea deja pregatita trece la ea. */
+  function adoptShot(name) {
+    var k = 'pick:' + name;
+    if (!shots[k]) return;
+    shots[data.uid + '/' + name] = shots[k];
+    delete shots[k];
+  }
+
+  function shotInner(key) {
+    var st = shots[key];
+    if (st && st.state === 'ok') return '<img src="' + esc(st.url) + '" alt="' + esc(tr('photoAlt')) + '">';
+    if (st && st.state === 'error') {
+      return '<span class="shot-msg">' + esc(tr('photoError')) + '</span>' +
+        '<button type="button" class="link" data-act="shot-retry" data-key="' + esc(key) + '">' + esc(tr('retry')) + '</button>';
+    }
+    return '<span class="shot-msg">' + esc(tr('photoLoading')) + '</span>';
+  }
+
+  /* Locul unei poze pe ecran. Are de la inceput forma pozei, citita din numele ei, ca pagina sa nu sara cand poza soseste.
+     O poza inalta nu trece de inaltimea ingaduita (--shot-max, din CSS): locul ei se ingusteaza, pastrand forma. */
+  function shotBox(key, path, cls) {
+    var sz = PHOTO.size(path), ratio = sz ? sz.w + ' / ' + sz.h : '4 / 3';
+    needShot(key, path);
+    return '<div class="shot' + (cls ? ' ' + cls : '') + '" data-shot="' + esc(key) + '" style="aspect-ratio:' + ratio + ';max-width:calc(var(--shot-max) * ' + ratio + ')">' +
+      shotInner(key) + '</div>';
+  }
+
+  /* Poza a sosit, sau nu a putut fi adusa: locurile ei de pe ecran se completeaza fara sa se redeseneze nimic altceva. */
+  function shotReady(key) {
+    var boxes = document.querySelectorAll('.shot'), hit = false;
+    for (var i = 0; i < boxes.length; i++) {
+      if (boxes[i].getAttribute('data-shot') !== key) continue;
+      boxes[i].innerHTML = shotInner(key);
+      hit = true;
+    }
+    if (hit && route === 'flux' && auth === 'in') shownFeed = viewFeed();
+  }
+
+  function forgetShots() {
+    Object.keys(shots).forEach(dropShot);
+  }
+
+  /* Randul de poza dintr-un formular: alegerea, apoi o miniatura cu schimbare si scoatere. Butoanele deschid alegerea de
+     fisiere a telefonului prin campul pic-file din pagina, care sta in afara ecranelor si nu se redeseneaza niciodata:
+     cat omul alege poza, ecranul se poate redesena fara ca alegerea lui sa se piarda. */
+  function photoRow(id, key, path, busy) {
+    var pick = function (label) {
+      return '<button type="button" class="link" data-act="pic-pick" data-form="' + id + '" data-focus="' + id + '-pick">' + esc(tr(label)) + '</button>';
+    };
+    if (busy) {
+      return '<div class="line" id="' + id + '-pic"><div><div class="line-t">' + esc(tr('photo')) + '</div><div class="line-s" role="status">' + esc(tr('photoBusy')) + '</div></div></div>';
+    }
+    if (!key) {
+      return '<div class="line" id="' + id + '-pic"><div><div class="line-t">' + esc(tr('photo')) + '</div><div class="line-s">' + esc(tr('photoSub')) + '</div></div>' +
+        pick('pick') + '</div>';
+    }
+    return '<div class="pic" id="' + id + '-pic">' + shotBox(key, path, 'thumb') +
+      '<div class="pic-acts">' + pick('photoChange') +
+      '<button type="button" class="link" data-act="pic-drop" data-form="' + id + '" data-focus="' + id + '-drop">' + esc(tr('photoRemove')) + '</button></div></div>';
+  }
+
+  /* Poza aratata acum intr-un formular: cea abia aleasa, sau cea pe care activitatea o are deja. */
+  function formShot(form) {
+    if (form.pic) return ['pick:' + form.pic.name, form.pic.name];
+    if (form === noteForm && form.photo && !form.drop) return [data.uid + '/' + form.photo, data.uid + '/' + form.photo];
+    return ['', ''];
+  }
+
+  /* Redeseneaza doar randul pozei. Cine a ajuns la el cu tastatura ramane pe el. */
+  function drawPicRow(id, form) {
+    var el = byId(id + '-pic'), sh = formShot(form);
+    if (!el) return;
+    var here = el.contains(document.activeElement);
+    el.outerHTML = photoRow(id, sh[0], sh[1], form.picBusy);
+    var btn = here || document.activeElement === document.body ? viewEl.querySelector('[data-focus="' + id + '-pick"]') : null;
+    if (btn) btn.focus({ preventScroll: true });
+  }
+
+  /* Formularul acesta mai este cel de pe ecran? */
+  function formShown(form) { return form === add ? isAddRoute(route) : form === noteForm && route === 'detalii'; }
+
+  /* Omul a ales o poza: se micsoreaza, apoi apare in formular. Formularul nu se redeseneaza, ca sa nu se piarda ce e scris in el. */
+  function pickPhoto(input) {
+    var form = picFor, id = form === add ? 'act' : 'note';
+    var file = input.files && input.files[0];
+    input.value = '';
+    picFor = null;
+    if (!file || !form || form.picBusy || !formShown(form)) return;
+    form.picBusy = true;
+    drawPicRow(id, form);
+    PHOTO.shrink(file).then(function (r) {
+      form.picBusy = false;
+      if (!formShown(form)) return;
+      if (form.pic) dropShot('pick:' + form.pic.name);
+      shots['pick:' + r.name] = { state: 'ok', url: URL.createObjectURL(r.blob) };
+      form.pic = r;
+      if (form === noteForm) form.drop = false;
+      drawPicRow(id, form);
+    }, function () {
+      form.picBusy = false;
+      if (!formShown(form)) return;
+      drawPicRow(id, form);
+      toast(tr('photoBad'));
+    });
+  }
+
   /* Campul de detalii. Randul nou de la inceput este cel pe care pagina il arunca oricum, ca textul sa ramana intreg. */
   function noteField(id, value, hint, plain) {
     return '<div class="field note-field"><label for="' + id + '"' + (plain ? ' class="sr"' : '') + '>' + esc(tr('details')) + '</label>' +
@@ -780,7 +1215,7 @@
 
   function rowEntry(e) {
     return '<li><button type="button" class="row" data-act="entry" data-id="' + esc(e.id) + '" data-focus="e-' + esc(e.id) + '">' +
-      '<span class="row-main"><span class="row-t">' + esc(nameOf(e)) + (e.note ? noteMark() : '') + '</span><span class="row-s">' + esc(entrySub(e)) + '</span></span>' +
+      '<span class="row-main"><span class="row-t">' + esc(nameOf(e)) + marks(e) + '</span><span class="row-s">' + esc(entrySub(e)) + '</span></span>' +
       '<span class="pill ' + e.type + '">' + L.fmt(L.signed(e)) + '</span></button></li>';
   }
 
@@ -824,6 +1259,28 @@
 
   function saveLabel() { return tr('save') + ' ' + L.fmt(add.type === 'minus' ? -add.pts : add.pts); }
 
+  /* Detaliile din formularul de notare: stranse intr-un rand pana cand omul vrea sa le scrie. */
+  function addNote() {
+    if (!notesOn()) return '';
+    if (add.noteOpen) return noteField('act-note', add.note, BACKEND ? tr('detailsWho') : '');
+    return '<div class="line" id="note-row"><div><div class="line-t">' + esc(tr('details')) + '</div><div class="line-s">' + esc(tr('detailsSub')) + '</div></div>' +
+      '<button type="button" class="link" data-act="note-open" data-focus="note-open">' + esc(tr('addShort')) + '</button></div>';
+  }
+
+  function addPic() {
+    var shot = formShot(add);
+    return photosOn() ? photoRow('act', shot[0], shot[1], add.picBusy) : '';
+  }
+
+  /* Ce stie baza de date sa pastreze se afla la primul drum pana la cont. Daca omul scrie deja o activitate cand soseste
+     raspunsul, randurile de detalii si de poza care lipseau apar pe loc, fara ca formularul sa se redeseneze sub degetele lui. */
+  function offerMore() {
+    var after = byId('keep-row');
+    if (!isAddRoute(route) || !after) return;
+    if (notesOn() && !byId('note-row') && !byId('act-note')) after.insertAdjacentHTML('beforebegin', addNote());
+    if (photosOn() && !byId('act-pic')) after.insertAdjacentHTML('beforebegin', addPic());
+  }
+
   function viewAdd() {
     var favs = data.favs.filter(function (f) { return f.type === add.type; });
     var chips = favs.map(function (f) {
@@ -836,11 +1293,6 @@
           '<button type="button" class="seg-b" aria-pressed="' + !add.pub + '" data-act="pub" data-v="0" data-focus="pub-0">' + esc(tr('priv')) + '</button>' +
           '<button type="button" class="seg-b" aria-pressed="' + !!add.pub + '" data-act="pub" data-v="1" data-focus="pub-1">' + esc(tr('pub')) + '</button>' +
         '</div></div>';
-    /* Detaliile stau stranse intr-un rand pana cand omul vrea sa le scrie. */
-    var note = !notesOn() ? '' : add.noteOpen
-      ? noteField('act-note', add.note, BACKEND ? tr('detailsWho') : '')
-      : '<div class="line" id="note-row"><div><div class="line-t">' + esc(tr('details')) + '</div><div class="line-s">' + esc(tr('detailsSub')) + '</div></div>' +
-          '<button type="button" class="link" data-act="note-open" data-focus="note-open">' + esc(tr('addShort')) + '</button></div>';
     return '' +
       '<header class="head head-add"><h1 id="title" tabindex="-1">' + esc(tr('newActivity')) + '</h1>' +
         '<a class="icon-btn" href="#azi" data-route="azi" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a></header>' +
@@ -864,7 +1316,7 @@
               '<output class="step-val" id="pts-val" aria-live="polite">' + add.pts + '</output>' +
               '<button type="button" class="round" data-act="step" data-d="1" data-focus="step-up" aria-label="' + esc(tr('more')) + '">+</button>' +
             '</div></div>' +
-          who + note +
+          who + addNote() + addPic() +
           '<label class="check" id="keep-row"' + (keepVisible() ? '' : ' hidden') + '><input type="checkbox" id="keep-fav"' + (add.keep ? ' checked' : '') + '><span>' + esc(tr('keepFav')) + '</span></label>' +
           '<div class="save-wrap"><button type="submit" class="save ' + add.type + '" id="save-btn">' + esc(saveLabel()) + '</button></div>' +
         '</form>' +
@@ -949,13 +1401,16 @@
     } else {
       body = '<ul class="feed" id="feed-list">' + feed.items.map(function (it) {
         var sign = it.type === 'minus' ? -it.pts : it.pts;
+        /* Adresa pozei vine de la server; se foloseste doar daca arata cum trebuie. */
+        if (it.photo && !PHOTO.size(it.photo)) it.photo = null;
         return '<li class="post" data-post="' + esc(it.id) + '">' +
           '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b> · ' + esc(ago(Number(it.ts))) + '</span>' +
             '<span class="pill ' + (it.type === 'minus' ? 'minus' : 'plus') + '">' + L.fmt(sign) + '</span></div>' +
-          (it.note
+          (it.note || it.photo
             ? '<button type="button" class="post-t post-more" data-act="post-note" data-id="' + esc(it.id) + '" data-focus="n-' + esc(it.id) + '" aria-expanded="' + !!openNotes[it.id] + '">' +
-                esc(postTitle(it)) + noteMark() + '</button>' +
-              (openNotes[it.id] ? '<p class="post-note">' + esc(it.note) + '</p>' : '')
+                esc(postTitle(it)) + marks(it) + '</button>' +
+              (openNotes[it.id] && it.note ? '<p class="post-note">' + esc(it.note) + '</p>' : '') +
+              (openNotes[it.id] && it.photo ? shotBox(it.photo, it.photo) : '')
             : '<div class="post-t">' + esc(postTitle(it)) + '</div>') +
           '<div class="post-bot"><span class="post-n">' + esc(cheersText(it)) + '</span>' +
             (it.mine
@@ -999,8 +1454,8 @@
   function syncStatus() {
     var n = pendingCount();
     if (!n) return tr('syncOk');
-    if (syncErr === 'offline') return tr('syncWait', { x: count(n, tr('changeForms')) }) + ' ' + tr('syncOffline');
-    if (syncErr) return tr('syncWait', { x: count(n, tr('changeForms')) }) + ' ' + tr('syncProblem');
+    if (syncErr === 'offline' || (!syncErr && pumpFails && pumpOffline)) return tr('syncWait', { x: count(n, tr('changeForms')) }) + ' ' + tr('syncOffline');
+    if (syncErr || pumpFails) return tr('syncWait', { x: count(n, tr('changeForms')) }) + ' ' + tr('syncProblem');
     return tr('syncWait', { x: count(n, tr('changeForms')) });
   }
 
@@ -1014,6 +1469,7 @@
     var bottom = BACKEND
       ? '<section class="sect"><h2>' + esc(tr('syncTitle')) + '</h2><p class="note" id="sync-status">' + esc(syncStatus()) + '</p>' +
           (syncErr && syncErr !== 'offline' ? '<p class="err-detail">' + esc(syncErr) + '</p>' : '') +
+          (photoErr ? '<p class="err-detail" id="photo-err">' + esc(tr('photo') + ': ' + photoErr) + '</p>' : '') +
           '<div class="btns"><button type="button" class="btn-line calm" data-act="sync-now" data-focus="sync-now">' + esc(tr('syncNow')) + '</button></div></section>' +
         '<section class="sect"><div class="btns">' +
           '<button type="button" class="btn-line calm" data-act="signout" data-focus="signout">' + esc(tr('signOut')) + '</button>' +
@@ -1090,12 +1546,13 @@
     var e = findEntry(noteForm.id), today = L.dayKey(new Date());
     if (!e) return '';
     return '' +
-      '<header class="head head-add"><h1 id="title" tabindex="-1">' + esc(tr('details')) + '</h1>' +
+      '<header class="head head-add"><h1 id="title" tabindex="-1">' + esc(tr(photosOn() ? 'moreTitle' : 'details')) + '</h1>' +
         '<a class="icon-btn" href="#' + noteForm.back + '" data-route="' + noteForm.back + '" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a></header>' +
       '<div class="pad"><form id="note-form" novalidate>' +
         '<p class="note-of"><b>' + esc(nameOf(e)) + '</b> · ' + esc(L.fmt(L.signed(e)) + ' · ' + dayTitle(e.day, today) + ', ' + timeOf(e.ts)) + '</p>' +
         noteField('note-input', noteForm.value, (BACKEND ? tr('detailsWho') + ' ' : '') + tr('detailsEmpty'), true) +
-        '<div class="go"><button type="submit" class="save" id="note-btn">' + esc(tr('saveDetails')) + '</button></div>' +
+        (photosOn() ? photoRow('note', formShot(noteForm)[0], formShot(noteForm)[1], noteForm.picBusy) : '') +
+        '<div class="go"><button type="submit" class="save" id="note-btn">' + esc(tr(photosOn() ? 'save' : 'saveDetails')) + '</button></div>' +
       '</form></div>';
   }
 
@@ -1201,7 +1658,7 @@
   }
 
   function resetAdd(type) {
-    add = { type: type, favId: null, name: '', pts: 10, keep: false, pub: type === 'plus' && !!data.pubDefault, note: '', noteOpen: false };
+    add = { type: type, favId: null, name: '', pts: 10, keep: false, pub: type === 'plus' && !!data.pubDefault, note: '', noteOpen: false, pic: null, picBusy: false };
   }
 
   function enter(r) {
@@ -1246,6 +1703,9 @@
     var note = byId('dlg-n');
     note.textContent = o.note || '';
     note.hidden = !o.note;
+    var pic = byId('dlg-p');
+    pic.innerHTML = o.shot ? shotBox(o.shot, o.shot) : '';
+    pic.hidden = !o.shot;
     dlgLink = o.link ? o.link.fn : null;
     var link = byId('dlg-link');
     link.textContent = o.link ? o.link.label : '';
@@ -1285,6 +1745,7 @@
 
   function saveAdd() {
     var input = byId('act-name'), area = byId('act-note');
+    if (add.picBusy) { toast(tr('photoBusy')); return; }
     if (input) add.name = input.value;
     if (area) add.note = area.value;
     var name = add.name.trim(), note = notesOn() ? L.cleanNote(add.note) : '';
@@ -1301,6 +1762,13 @@
     };
     if (fav && fav.key && favName(fav) === name) entry.key = fav.key; else entry.name = name;
     if (note) entry.note = note;
+    if (add.pic && photosOn()) {
+      entry.photo = add.pic.name;
+      PHOTO.put(add.pic.name, add.pic.blob);
+      data.uploads.push(add.pic.name);
+      data.outbox.photo.push({ id: entry.id, photo: add.pic.name });
+      adoptShot(add.pic.name);
+    }
     data.entries.push(entry);
     if (add.keep && keepVisible()) {
       data.favs.push({ id: uuid(), type: add.type, name: name, pts: entry.pts });
@@ -1311,6 +1779,7 @@
     navigate('azi', true);
     toast(L.fmt(L.signed(entry)) + ' · ' + nameOf(entry));
     queueSync();
+    if (entry.photo) queuePump();
   }
 
   function removeEntry(id) {
@@ -1320,8 +1789,11 @@
     if (BACKEND) {
       data.outbox.vis = data.outbox.vis.filter(function (op) { return op.id !== id; });
       data.outbox.note = data.outbox.note.filter(function (op) { return op.id !== id; });
-      /* Ce a ajuns deja pe server, sau e chiar acum pe drum, trebuie sters si acolo. */
-      if (e.sync !== 1 || inflight[id]) data.outbox.del.push(id);
+      data.outbox.photo = data.outbox.photo.filter(function (op) { return op.id !== id; });
+      if (e.photo) releaseFile(e.photo);
+      /* Stergerea pleaca intotdeauna si spre cont: activitatea poate fi acolo chiar daca raspunsul care o confirma s-a
+         pierdut. Pe una necunoscuta contul nu o baga in seama, iar poza ei se sterge abia dupa ce contul a confirmat. */
+      data.outbox.del.push(id);
     }
     persist();
     render();
@@ -1355,7 +1827,9 @@
       onOk: function () { removeEntry(id); }
     };
     if (e.note) o.note = e.note;
-    if (notesOn()) o.link = { label: tr(e.note ? 'editDetails' : 'addDetails'), fn: function () { openNote(id); } };
+    if (e.photo && BACKEND) o.shot = data.uid + '/' + e.photo;
+    if (photosOn()) o.link = { label: tr(e.note || e.photo ? 'moreEdit' : 'moreAdd'), fn: function () { openNote(id); } };
+    else if (notesOn()) o.link = { label: tr(e.note ? 'editDetails' : 'addDetails'), fn: function () { openNote(id); } };
     if (BACKEND) o.extra = { label: tr(e.pub ? 'makePrivate' : 'makePublic'), fn: function () { setVisibility(id, !e.pub); } };
     openDialog(o);
   }
@@ -1364,9 +1838,30 @@
   function openNote(id) {
     var e = findEntry(id);
     if (!e) return;
-    noteForm = { id: id, value: e.note || '', back: MAIN.indexOf(route) >= 0 ? route : 'azi' };
+    noteForm = { id: id, value: e.note || '', back: MAIN.indexOf(route) >= 0 ? route : 'azi', photo: e.photo || '', pic: null, drop: false, picBusy: false };
     navigate('detalii');
     focusEnd('note-input');
+  }
+
+  /* Pune, schimba sau scoate poza unei activitati. pic este poza noua, deja micsorata, sau null pentru scoatere. */
+  function setPhoto(id, pic) {
+    var e = findEntry(id), old = e && e.photo;
+    if (!e || (!pic && !old)) return false;
+    if (pic) {
+      e.photo = pic.name;
+      PHOTO.put(pic.name, pic.blob);
+      data.uploads.push(pic.name);
+      adoptShot(pic.name);
+    } else {
+      delete e.photo;
+    }
+    if (old) releaseFile(old);
+    data.outbox.photo = data.outbox.photo.filter(function (op) { return op.id !== id; });
+    data.outbox.photo.push({ id: id, photo: pic ? pic.name : null });
+    persist();
+    queuePump();
+    queueSync();
+    return true;
   }
 
   /* Pune, schimba sau sterge detaliile unei activitati. Intoarce true daca s-a schimbat ceva. */
@@ -1386,11 +1881,14 @@
 
   function submitNote() {
     var el = byId('note-input'), back = noteForm.back, id = noteForm.id;
+    if (noteForm.picBusy) { toast(tr('photoBusy')); return; }
     var text = L.cleanNote(el ? el.value : noteForm.value);
     var changed = setNote(id, text);
-    noteForm = { id: null, value: '', back: 'azi' };
+    var pic = !photosOn() ? false : noteForm.pic ? setPhoto(id, noteForm.pic) : noteForm.drop ? setPhoto(id, null) : false;
+    noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
     navigate(back, true);
-    if (changed) toast(tr(text ? 'detailsSaved' : 'detailsRemoved'));
+    if (pic) toast(tr('changesSaved'));
+    else if (changed) toast(tr(text ? 'detailsSaved' : 'detailsRemoved'));
   }
 
   function onClick(ev) {
@@ -1430,6 +1928,24 @@
     } else if (act === 'post-note') {
       openNotes[id] = !openNotes[id];
       render();
+    } else if (act === 'pic-pick') {
+      /* Campul de fisiere sta in pagina, in afara ecranelor; aici doar i se spune pentru cine se alege. */
+      var chooser = byId('pic-file');
+      picFor = b.getAttribute('data-form') === 'act' ? add : noteForm;
+      PHOTO.ready();
+      chooser.value = '';
+      chooser.click();
+    } else if (act === 'pic-drop') {
+      var form = b.getAttribute('data-form') === 'act' ? add : noteForm;
+      if (form.pic) dropShot('pick:' + form.pic.name);
+      form.pic = null;
+      if (form === noteForm) form.drop = true;
+      drawPicRow(b.getAttribute('data-form'), form);
+    } else if (act === 'shot-retry') {
+      var key = b.getAttribute('data-key');
+      delete shots[key];
+      needShot(key, key);
+      shotReady(key);
     } else if (act === 'entry') {
       askEntry(id);
     } else if (act === 'day') {
@@ -1487,6 +2003,8 @@
       askDeleteAccount();
     } else if (act === 'sync-now') {
       syncFails = 0;
+      pumpFails = 0;
+      queuePump(0);
       sync();
     } else if (act === 'feed-lang') {
       var all = b.getAttribute('data-all') === '1';
@@ -1555,13 +2073,16 @@
     document.addEventListener('input', onInput);
     document.addEventListener('change', function (ev) {
       if (ev.target && ev.target.id === 'keep-fav') add.keep = ev.target.checked;
+      if (ev.target && ev.target.id === 'pic-file') pickPhoto(ev.target);
     });
     document.addEventListener('submit', onSubmit);
     window.addEventListener('popstate', onHistory);
     window.addEventListener('hashchange', onHistory);
     window.addEventListener('online', function () {
       syncFails = 0;
+      pumpFails = 0;
       queueSync(200);
+      queuePump(400);
       if (BACKEND && auth === 'in' && route === 'flux') { feed.fails = 0; openFeed(); }
     });
     /* La revenirea in aplicatie se recalculeaza ziua curenta si se aduc noutatile din cont. */
@@ -1570,6 +2091,7 @@
       render();
       if (BACKEND) {
         if (pendingCount() > 0 || Date.now() - data.lastSync > 60000) queueSync(200);
+        if (data.uploads.length || data.outbox.gone.length) queuePump(400);
         if (route === 'flux') { feed.fails = 0; openFeed(); }
       }
     });

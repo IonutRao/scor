@@ -16,7 +16,7 @@ SRC = ROOT / "src"
 SITE = ROOT
 ART = ROOT / "artifact"
 TEST = ROOT / "test"
-VERSION = "0.3"
+VERSION = "0.4"
 TITLE = "Scorul zilei"
 DESCRIPTION = "Ține scorul zilei tale: faptele bune pe plus, cele mai puțin bune pe minus."
 INK = (30, 27, 75)
@@ -28,7 +28,7 @@ def read(name):
 
 
 css = read("app.css") + "\n" + read("social.css")
-js = "\n".join(read(n) for n in ("logic.js", "i18n.js", "api.js", "app.js"))
+js = "\n".join(read(n) for n in ("logic.js", "i18n.js", "api.js", "photo.js", "app.js"))
 body = read("body.html")
 config = json.loads(read("config.json"))
 

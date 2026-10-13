@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Porneste un PostgreSQL local, gol, pregatit ca un proiect Supabase, si incarca supabase/schema.sql.
 # Folosire: test/db/start.sh [director-de-lucru]     Oprire: test/db/start.sh stop [director-de-lucru]
-# SCOR_SCHEMA_FILE=test/db/schema-0.2.sql incarca in loc scriptul unei versiuni mai vechi, pentru testele de trecere.
+# SCOR_SCHEMA_FILE=test/db/schema-0.3.sql incarca in loc scriptul unei versiuni mai vechi, pentru testele de trecere.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

@@ -66,6 +66,7 @@
 .post-more { display: block; width: 100%; text-align: left; }
 .post-more:active { opacity: .6; }
 .post-more[aria-expanded="true"] .note-ic { background: var(--ink); color: var(--on-ink); }
+.note-ic + .note-ic, .post-more .note-ic + .note-ic { margin-left: 4px; }
 .post-note { padding: 10px 14px; border-radius: 14px; background: var(--card); white-space: pre-line; overflow-wrap: anywhere; font-size: 15px; line-height: 1.45; }
 .post-n { min-width: 0; font-size: 13px; color: var(--muted); }
 .cheer { flex: none; min-height: 44px; padding: 0 16px; border: 1.5px solid var(--ink); border-radius: 22px; background: var(--card); color: var(--ink); font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; }

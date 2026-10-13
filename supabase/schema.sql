@@ -1,4 +1,4 @@
--- Scorul zilei: baza de date (versiunea 0.3: activitatile pot avea detalii)
+-- Scorul zilei: baza de date (versiunea 0.4: activitatile pot avea detalii si o poza)
 --
 -- Se lipeste in Supabase, la SQL Editor, si se apasa Run.
 -- Poate fi rulat din nou oricand: nu sterge si nu modifica datele existente.
@@ -8,7 +8,8 @@
 --   1. tabelele: profiles, settings, entries, cheers
 --   2. cine ce are voie sa vada si sa schimbe (drepturi si reguli pe randuri)
 --   3. numaratoarea incurajarilor
---   4. functiile pe care le apeleaza aplicatia
+--   4. locul in care se pastreaza pozele si cine le poate vedea
+--   5. functiile pe care le apeleaza aplicatia
 
 
 -- 1. TABELE -----------------------------------------------------------------
@@ -80,6 +81,22 @@ begin
 end
 $$;
 
+-- Poza unei activitati (din versiunea 0.4): numele fisierului din locul de poze, aflat in dosarul utilizatorului.
+-- Numele poarta si marimea pozei, ca aplicatia sa ii poata pastra locul pe ecran inainte sa o incarce.
+alter table public.entries add column if not exists photo text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'entries_photo_ok' and conrelid = 'public.entries'::regclass
+  ) then
+    alter table public.entries add constraint entries_photo_ok check (
+      photo is null or photo ~ '^[0-9a-f]{16}-[0-9]{1,4}x[0-9]{1,4}\.jpg$'
+    );
+  end if;
+end
+$$;
+create index if not exists entries_photo on public.entries (photo) where photo is not null;
+
 -- Incurajarile: cel mult una de la un utilizator pentru o activitate.
 create table if not exists public.cheers (
   entry_id uuid not null references public.entries (id) on delete cascade,
@@ -109,10 +126,10 @@ grant select on public.settings to authenticated;
 grant insert (user_id, favs, updated_at) on public.settings to authenticated;
 grant update (favs, updated_at) on public.settings to authenticated;
 
--- La activitati se pot schimba ulterior doar vizibilitatea si detaliile. Numarul de incurajari nu poate fi scris de nimeni.
+-- La activitati se pot schimba ulterior doar vizibilitatea, detaliile si poza. Numarul de incurajari nu poate fi scris de nimeni.
 grant select, delete on public.entries to authenticated;
 grant insert (id, user_id, day, ts, type, pts, key, name, is_public, lang, note) on public.entries to authenticated;
-grant update (is_public, note) on public.entries to authenticated;
+grant update (is_public, note, photo) on public.entries to authenticated;
 
 grant select, delete on public.cheers to authenticated;
 grant insert (entry_id, user_id) on public.cheers to authenticated;
@@ -208,7 +225,50 @@ create trigger entries_clamp before insert on public.entries
   for each row execute function public.tg_entries_clamp();
 
 
--- 4. FUNCTIILE APELATE DE APLICATIE ------------------------------------------
+-- 4. LOCUL PENTRU POZE ---------------------------------------------------------
+
+-- Pozele stau in Supabase Storage, intr-un loc privat: nimic nu se poate vedea fara cont si fara regulile de mai jos.
+-- Fiecare utilizator are dosarul lui, numit dupa identitatea lui. O poza cantareste cel mult 1 MB si este un JPEG.
+-- Partea aceasta sta inaintea functiilor: aplicatia ofera poze doar dupa ce functia sync de mai jos ii spune ca baza
+-- le cunoaste, deci daca ceva de aici nu reuseste, functia ramane cea veche si aplicatia merge ca inainte, fara poze.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('photos', 'photos', false, 1048576, array['image/jpeg'])
+on conflict (id) do update
+  set public = excluded.public, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+-- Fiecare incarca doar in dosarul lui, cu un nume de forma asteptata.
+drop policy if exists photos_insert_own on storage.objects;
+create policy photos_insert_own on storage.objects for insert to authenticated
+  with check (
+    bucket_id = 'photos'
+    and name ~ ('^' || (select auth.uid())::text || '/[0-9a-f]{16}-[0-9]{1,4}x[0-9]{1,4}\.jpg$')
+  );
+
+-- Fiecare isi vede pozele lui; pe ale altora doar daca sunt poza unei activitati publice.
+-- In cautarea de mai jos numele fisierului este scris cu tot cu tabela lui (objects.name): si activitatile au o
+-- coloana numita name, iar fara tabela in fata s-ar compara cu numele activitatii.
+drop policy if exists photos_read on storage.objects;
+create policy photos_read on storage.objects for select to authenticated
+  using (
+    bucket_id = 'photos'
+    and (
+      (storage.foldername(name))[1] = (select auth.uid())::text
+      or exists (
+        select 1 from public.entries e
+        where e.is_public
+          and e.photo = storage.filename(objects.name)
+          and e.user_id::text = (storage.foldername(objects.name))[1]
+      )
+    )
+  );
+
+-- Fiecare isi sterge doar pozele lui. Stergerea se face din aplicatie, prin Supabase Storage, niciodata direct din tabela.
+drop policy if exists photos_delete_own on storage.objects;
+create policy photos_delete_own on storage.objects for delete to authenticated
+  using (bucket_id = 'photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+
+-- 5. FUNCTIILE APELATE DE APLICATIE ------------------------------------------
 
 -- Profilul utilizatorului autentificat, sau null daca nu si-a ales inca un nume.
 create or replace function public.me() returns jsonb
@@ -260,23 +320,27 @@ $$;
 --   p_vis  schimbari de vizibilitate: [{id, pub}]
 --   p_favs lista de favorite, daca s-a schimbat
 --   p_note detalii schimbate sau sterse: [{id, note}]
+--   p_photo poze puse, schimbate sau scoase: [{id, photo}], unde photo este numele fisierului deja incarcat, sau null
 -- Raspunsul poarta si versiunea acestui script (v), ca aplicatia sa stie ce poate cere.
--- Forma veche, fara p_note, este stearsa: altfel ar exista doua functii cu acelasi nume. Aplicatiile mai vechi,
--- care nu trimit p_note, o folosesc pe cea noua fara nicio schimbare.
+-- Formele vechi, cu mai putini parametri, sunt sterse: altfel ar exista mai multe functii cu acelasi nume.
+-- Aplicatiile mai vechi, care nu trimit parametrii noi, o folosesc pe cea de acum fara nicio schimbare.
 drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text);
+drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb);
 create or replace function public.sync(
   p_add jsonb default '[]'::jsonb,
   p_del jsonb default '[]'::jsonb,
   p_vis jsonb default '[]'::jsonb,
   p_favs jsonb default null,
   p_lang text default 'ro',
-  p_note jsonb default '[]'::jsonb
+  p_note jsonb default '[]'::jsonb,
+  p_photo jsonb default '[]'::jsonb
 ) returns jsonb
 language plpgsql security invoker set search_path = '' as $$
 declare
   v_uid uuid := auth.uid();
   v_lang text := case when p_lang in ('ro', 'en') then p_lang else 'ro' end;
   v_uuid constant text := '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
+  v_photo constant text := '^[0-9a-f]{16}-[0-9]{1,4}x[0-9]{1,4}\.jpg$';
   v_item jsonb;
   v_rejected jsonb := '[]'::jsonb;
   v_favs jsonb;
@@ -294,6 +358,7 @@ begin
     end if;
     for v_item in select x from jsonb_array_elements(p_add) x loop
       begin
+        -- Poza nu vine niciodata odata cu activitatea: contul afla de ea prin p_photo, dupa ce fisierul ei exista.
         insert into public.entries (id, user_id, day, ts, type, pts, key, name, is_public, lang, note)
         values (
           (v_item->>'id')::uuid,
@@ -350,6 +415,37 @@ begin
     where e.user_id = v_uid and e.id = n.id;
   end if;
 
+  -- Poza pusa, schimbata sau scoasa dupa notare. Un nume care nu arata a poza este ignorat; la fel unul al carui fisier
+  -- nu este in dosarul omului: o schimbare veche, ajunsa din nou dupa ce fisierul ei a fost sters intre timp, nu are
+  -- voie sa lase activitatea cu trimitere la un fisier care nu mai exista. Evidenta fisierelor se citeste cu rolul si
+  -- identitatea omului, la fel cum o citeste serviciul de fisiere, deci se vad doar fisierele din dosarul lui.
+  if jsonb_typeof(p_photo) = 'array' then
+    begin
+      update public.entries e
+      set photo = f.photo
+      from (
+        select case when (x->>'id') ~ v_uuid then (x->>'id')::uuid end as id, x->>'photo' as photo
+        from jsonb_array_elements(p_photo) x
+        where jsonb_typeof(x) = 'object'
+          and (jsonb_typeof(x->'photo') = 'null' or (jsonb_typeof(x->'photo') = 'string' and (x->>'photo') ~ v_photo))
+      ) f
+      where e.user_id = v_uid and e.id = f.id
+        and (f.photo is null or exists (
+          select 1 from storage.objects o where o.bucket_id = 'photos' and o.name = v_uid::text || '/' || f.photo));
+    exception when insufficient_privilege or undefined_table then
+      -- Fara acces la evidenta fisierelor (nu este cazul in Supabase), schimbarea se aplica fara aceasta verificare.
+      update public.entries e
+      set photo = f.photo
+      from (
+        select case when (x->>'id') ~ v_uuid then (x->>'id')::uuid end as id, x->>'photo' as photo
+        from jsonb_array_elements(p_photo) x
+        where jsonb_typeof(x) = 'object'
+          and (jsonb_typeof(x->'photo') = 'null' or (jsonb_typeof(x->'photo') = 'string' and (x->>'photo') ~ v_photo))
+      ) f
+      where e.user_id = v_uid and e.id = f.id;
+    end;
+  end if;
+
   if p_favs is not null and jsonb_typeof(p_favs) = 'array' then
     insert into public.settings (user_id, favs, updated_at) values (v_uid, p_favs, now())
     on conflict (user_id) do update set favs = excluded.favs, updated_at = excluded.updated_at;
@@ -362,19 +458,19 @@ begin
       select jsonb_agg(jsonb_build_object(
         'id', e.id, 'day', e.day, 'ts', (extract(epoch from e.ts) * 1000)::bigint,
         'type', e.type, 'pts', e.pts, 'key', e.key, 'name', e.name,
-        'pub', e.is_public, 'cheers', e.cheers_count, 'note', e.note
+        'pub', e.is_public, 'cheers', e.cheers_count, 'note', e.note, 'photo', e.photo
       ) order by e.ts desc)
       from public.entries e where e.user_id = v_uid
     ), '[]'::jsonb),
     'favs', v_favs,
     'rejected', v_rejected,
     'now', (extract(epoch from now()) * 1000)::bigint,
-    'v', 3
+    'v', 4
   );
 end
 $$;
 
--- Fluxul: cele mai noi activitati publice, cu detaliile lor. Fara nimic privat, fara adrese de email.
+-- Fluxul: cele mai noi activitati publice, cu detaliile lor si cu locul pozei. Fara nimic privat, fara adrese de email.
 create or replace function public.feed(
   p_lang text default null,
   p_before bigint default null,
@@ -388,6 +484,7 @@ language sql stable security invoker set search_path = '' as $$
       p.name as author,
       (e.user_id = (select auth.uid())) as mine,
       e.type, e.pts, e.key, e.name, e.lang, e.note,
+      case when e.photo is not null then e.user_id::text || '/' || e.photo end as photo,
       (extract(epoch from e.ts) * 1000)::bigint as ts,
       e.cheers_count as cheers,
       exists (
@@ -446,7 +543,7 @@ $$;
 revoke all on function public.me() from public, anon;
 revoke all on function public.set_name(text) from public, anon;
 revoke all on function public.note_text(text) from public, anon;
-revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb) from public, anon;
+revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb) from public, anon;
 revoke all on function public.feed(text, bigint, integer) from public, anon;
 revoke all on function public.cheer(uuid, boolean) from public, anon;
 revoke all on function public.delete_my_account() from public, anon;
@@ -456,10 +553,11 @@ revoke all on function public.tg_entries_clamp() from public, anon, authenticate
 grant execute on function public.me() to authenticated;
 grant execute on function public.set_name(text) to authenticated;
 grant execute on function public.note_text(text) to authenticated;
-grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb) to authenticated;
+grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb) to authenticated;
 grant execute on function public.feed(text, bigint, integer) to authenticated;
 grant execute on function public.cheer(uuid, boolean) to authenticated;
 grant execute on function public.delete_my_account() to authenticated;
+
 
 -- Anunta serviciul care expune functiile ca s-au schimbat.
 notify pgrst, 'reload schema';

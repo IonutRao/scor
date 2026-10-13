@@ -187,6 +187,7 @@ with sync_playwright() as p:
     }""")
     check(box[1] >= box[0] and box[0] <= box[2], "while details are typed on a short screen the save button does not cover them (field ends at %d, button starts at %d)" % (box[0], box[1]))
     page.fill("#act-note", typed)
+    check(page.locator('[data-act="pic-pick"]').count() == 0 and page.locator("#act-pic").count() == 0, "without an account the form offers no photo: photos live in the account")
     page.set_viewport_size({"width": 390, "height": 844})
     page.click('[data-focus="type-minus"]')
     page.click('[data-focus="type-plus"]')
@@ -204,6 +205,8 @@ with sync_playwright() as p:
     page.click("#dlg-link")
     check(text(page, "h1") == "Detalii" and page.input_value("#note-input").startswith("Am mutat o canapea."), "the details screen opens with the current text")
     check(page.locator("#nav").is_hidden() and "Ajutat un vecin" in text(page, ".note-of"), "it names the activity and hides the tab bar")
+    check(page.locator('[data-act="pic-pick"]').count() == 0 and page.locator("#note-pic").count() == 0 and text(page, "#note-btn") == "Salvează detaliile",
+          "without an account the details screen offers no photo")
     page.fill("#note-input", "Am mutat o canapea și două fotolii.")
     shot(page, "15-detalii-schimbare.png")
     page.click("#note-btn")

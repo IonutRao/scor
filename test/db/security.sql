@@ -179,7 +179,7 @@ select t.ok((select count(*) from public.profiles) = 3, 'numele celor trei utili
 
 -- ---------------------------------------------------------------- detalii
 select t.be(t.a());
-select t.ok((public.sync()->>'v')::int = 3, 'raspunsul lui sync() poarta versiunea scriptului');
+select t.ok((public.sync()->>'v')::int = 4, 'raspunsul lui sync() poarta versiunea scriptului');
 select t.ok(
   public.sync(p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(70), 'day', current_date, 'ts', t.ms(now() - interval '5 minutes'), 'type', 'plus', 'pts', 10, 'name', 'Ajutor', 'pub', true,
@@ -240,6 +240,103 @@ select t.be(t.a());
 select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(70), t.e(71), t.e(72), t.e(73), t.e(74)))->'entries') = 4, 'activitatile cu detalii se sterg ca oricare altele');
 select t.be_anon();
 select t.fails($$select public.note_text('x')$$, '42501', 'neautentificat: nu poate apela nici functia de curatare');
+
+-- ---------------------------------------------------------------- poze
+-- Serviciul de fisiere din Supabase scrie si citeste randurile din storage.objects cu rolul si identitatea utilizatorului;
+-- aici se face la fel, direct. Numele fisierelor: dosarul utilizatorului, apoi un nume de poza.
+reset role;
+create function t.pic(n int) returns text language sql immutable as $$ select lpad(to_hex(n), 16, '0') || '-1280x960.jpg' $$;
+grant execute on function t.pic(int) to anon, authenticated;
+
+select t.be(t.a());
+select t.ok(
+  jsonb_array_length(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(80), 'day', current_date, 'ts', t.ms(now() - interval '5 minutes'), 'type', 'plus', 'pts', 10, 'name', 'Cu poza publica', 'pub', true),
+    jsonb_build_object('id', t.e(81), 'day', current_date, 'ts', t.ms(now() - interval '4 minutes'), 'type', 'plus', 'pts', 10, 'name', 'Cu poza privata', 'pub', false),
+    jsonb_build_object('id', t.e(82), 'day', current_date, 'ts', t.ms(now() - interval '3 minutes'), 'type', 'plus', 'pts', 5, 'name', 'Poza de la inceput', 'pub', false, 'photo', t.pic(3)),
+    jsonb_build_object('id', t.e(83), 'day', current_date, 'ts', t.ms(now() - interval '2 minutes'), 'type', 'plus', 'pts', 5, 'name', 'Nume de poza gresit', 'pub', false, 'photo', '../altundeva.jpg')
+  ))->'entries') = 8,
+  'Ana noteaza patru activitati pentru poze; o poza trimisa odata cu activitatea nu o respinge');
+select t.ok((select count(*) from public.entries where id in (t.e(82), t.e(83)) and photo is not null) = 0,
+  'poza trimisa odata cu activitatea este ignorata: contul afla de poze doar prin p_photo, dupa ce fisierul lor exista');
+
+insert into storage.objects (bucket_id, name, owner_id) values ('photos', t.a()::text || '/' || t.pic(1), t.a()::text);
+insert into storage.objects (bucket_id, name, owner_id) values ('photos', t.a()::text || '/' || t.pic(2), t.a()::text);
+insert into storage.objects (bucket_id, name, owner_id) values ('photos', t.a()::text || '/' || t.pic(9), t.a()::text);
+select t.ok((select count(*) from storage.objects) = 3, 'Ana incarca trei poze in dosarul ei si le vede');
+select t.fails($$insert into storage.objects (bucket_id, name) values ('photos', t.b()::text || '/' || t.pic(4))$$, '42501', 'Ana nu poate incarca in dosarul lui Bogdan');
+select t.fails($$insert into storage.objects (bucket_id, name) values ('photos', t.a()::text || '/orice.exe')$$, '42501', 'un fisier care nu arata a poza este refuzat');
+select t.fails($$insert into storage.objects (bucket_id, name) values ('photos', t.a()::text || '/sub/' || t.pic(4))$$, '42501', 'nici intr-un dosar mai adanc nu se poate incarca');
+select t.fails($$insert into storage.objects (bucket_id, name) values ('photos', t.pic(4))$$, '42501', 'nici in afara dosarului');
+select t.fails($$insert into storage.objects (bucket_id, name) values ('altceva', t.a()::text || '/' || t.pic(4))$$, '42501', 'intr-un alt loc decat cel de poze nu se poate incarca');
+update storage.objects set name = t.a()::text || '/' || t.pic(5) where name like '%' || t.pic(9);
+select t.ok((select count(*) from storage.objects where name like '%' || t.pic(9)) = 1 and (select count(*) from storage.objects where name like '%' || t.pic(5)) = 0,
+  'un fisier incarcat nu poate fi redenumit sau inlocuit');
+
+select t.ok(
+  public.sync(p_photo => jsonb_build_array(
+    jsonb_build_object('id', t.e(80), 'photo', t.pic(1)),
+    jsonb_build_object('id', t.e(81), 'photo', t.pic(2)),
+    jsonb_build_object('id', t.e(83), 'photo', 'nu-e-poza.png'),
+    jsonb_build_object('id', t.e(83), 'photo', 12),
+    jsonb_build_object('id', t.e(83)),
+    'gunoi', jsonb_build_object('id', 'x', 'photo', t.pic(1))
+  ))->'entries' @> jsonb_build_array(
+    jsonb_build_object('id', t.e(80), 'photo', t.pic(1)),
+    jsonb_build_object('id', t.e(81), 'photo', t.pic(2)),
+    jsonb_build_object('id', t.e(83), 'photo', null)),
+  'Ana leaga pozele de activitati; valorile gresite sunt ignorate');
+select t.ok(public.sync(p_photo => jsonb_build_array(jsonb_build_object('id', t.e(82), 'photo', t.pic(7)), jsonb_build_object('id', t.e(80), 'photo', t.pic(8))))->'entries'
+    @> jsonb_build_array(jsonb_build_object('id', t.e(82), 'photo', null), jsonb_build_object('id', t.e(80), 'photo', t.pic(1))),
+  'o legatura catre un fisier care nu exista in dosarul ei nu se aplica: activitatile raman cum erau');
+select t.ok(public.sync(p_photo => jsonb_build_array(jsonb_build_object('id', t.e(82), 'photo', t.pic(9))))->'entries'
+    @> jsonb_build_array(jsonb_build_object('id', t.e(82), 'photo', t.pic(9))),
+  'o legatura catre un fisier existent se aplica');
+select t.ok(public.sync(p_photo => jsonb_build_array(jsonb_build_object('id', t.e(82), 'photo', null)))->'entries'
+    @> jsonb_build_array(jsonb_build_object('id', t.e(82), 'photo', null)),
+  'si scoaterea pozei se aplica oricand');
+select t.fails($$update public.entries set photo = 'x.jpg' where id = t.e(80)$$, '23514', 'un nume de poza gresit, scris direct, este refuzat');
+
+select t.be(t.b());
+select t.ok(public.feed()->0->>'photo' = t.a()::text || '/' || t.pic(1), 'fluxul ii spune lui Bogdan unde este poza activitatii publice');
+select t.ok(not (public.feed()::text ~ t.pic(2)), 'fluxul nu pomeneste poza activitatii private');
+select t.ok((select count(*) from storage.objects) = 1 and (select name from storage.objects) = t.a()::text || '/' || t.pic(1),
+  'Bogdan poate citi doar poza activitatii publice; nici pe cea privata, nici pe cea nelegata de vreo activitate');
+update storage.objects set owner_id = t.b()::text, name = t.b()::text || '/' || t.pic(1);
+select t.ok((select owner_id from storage.objects) = t.a()::text and (select name from storage.objects) = t.a()::text || '/' || t.pic(1), 'Bogdan nu poate modifica sau muta poza Anei');
+select set_config('storage.allow_delete_query', 'true', false);
+delete from storage.objects;
+select t.ok((select count(*) from storage.objects) = 1, 'Bogdan nu poate sterge poza Anei');
+select t.ok(public.sync(p_photo => jsonb_build_array(jsonb_build_object('id', t.e(80), 'photo', null), jsonb_build_object('id', t.e(81), 'photo', t.pic(1)))) is not null,
+  'sync() cu pozele activitatilor Anei nu da eroare');
+reset role;
+select t.ok((select photo from public.entries where id = t.e(80)) = t.pic(1) and (select photo from public.entries where id = t.e(81)) = t.pic(2),
+  'pozele activitatilor Anei au ramas neschimbate dupa incercarile lui Bogdan');
+select t.ok((select count(*) from storage.objects) = 3, 'si fisierele ei sunt toate la locul lor');
+
+select t.be_anon();
+select t.ok((select count(*) from storage.objects) = 0, 'neautentificat: nicio poza nu poate fi citita');
+select t.fails($$insert into storage.objects (bucket_id, name) values ('photos', t.a()::text || '/' || t.pic(6))$$, '42501', 'neautentificat: nu se poate incarca nimic');
+
+-- Activitatea devine privata: poza ei nu mai poate fi citita de altcineva. Redevine publica: se poate din nou.
+select t.be(t.a());
+select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(80), 'pub', false))) is not null, 'Ana scoate din flux activitatea cu poza');
+select t.be(t.b());
+select t.ok((select count(*) from storage.objects) = 0, 'poza unei activitati scoase din flux nu mai poate fi citita de Bogdan');
+select t.be(t.a());
+select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(80), 'pub', true), jsonb_build_object('id', t.e(81), 'pub', true)),
+                        p_photo => jsonb_build_array(jsonb_build_object('id', t.e(81), 'photo', null))) is not null,
+  'Ana le face publice pe amandoua si scoate poza celei de-a doua');
+select t.be(t.b());
+select t.ok((select count(*) from storage.objects) = 1, 'Bogdan vede din nou o singura poza: cea scoasa de la activitate nu mai e a nimanui');
+select t.be(t.a());
+delete from storage.objects where name like '%' || t.pic(9);
+select t.ok((select count(*) from storage.objects) = 2, 'Ana isi sterge o poza prin serviciul de fisiere');
+select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(80), t.e(81), t.e(82), t.e(83)))->'entries') = 4, 'activitatile cu poze se sterg ca oricare altele');
+delete from storage.objects;
+select set_config('storage.allow_delete_query', 'false', false);
+reset role;
+select t.ok((select count(*) from storage.objects) = 0, 'dupa curatenie nu mai ramane nicio poza');
 
 -- ---------------------------------------------------------------- stergerea contului
 select t.be(t.a());

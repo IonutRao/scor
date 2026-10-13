@@ -707,10 +707,10 @@ try:
         # Maria schimba detaliile mai tarziu; Nelu le vede schimbate fara sa atinga nimic.
         ma.click('#nav a[data-route="azi"]')
         ma.click(row)
-        check(text(ma, "#dlg-n") == clean and text(ma, "#dlg-link") == "Schimbă detaliile", "dialogul Mariei arata detaliile si ofera schimbarea lor")
+        check(text(ma, "#dlg-n") == clean and text(ma, "#dlg-link") == "Schimbă detaliile sau poza", "dialogul Mariei arata detaliile si ofera schimbarea lor")
         shot(ma, "c17-detalii-dialog.png")
         ma.click("#dlg-link")
-        check(text(ma, "h1") == "Detalii" and "Le vede cine vede activitatea." in text(ma, "#note-input-h"), "ecranul de detalii spune cine le vede")
+        check(text(ma, "h1") == "Detalii și poză" and "Le vede cine vede activitatea." in text(ma, "#note-input-h"), "ecranul de detalii spune cine le vede")
         ma.fill("#note-input", "I-am arătat cum să își facă un cont. Mâine îi arăt și restul.")
         ma.click("#note-btn")
         soft(lambda: wait_text(ne, post + " .post-note", "Mâine îi arăt și restul."), "detaliile schimbate apar singure la Nelu")

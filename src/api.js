@@ -92,8 +92,67 @@ var API = (function () {
     }, function (err) { throw err && err.offline !== undefined ? err : norm(err); });
   }
 
+  /* ---------- pozele: locul de fisiere al contului (Supabase Storage) ---------- */
+
+  /* Dosarul de poze din cont si cate fisiere se cer sau se sterg cel mult intr-o cerere. */
+  var BUCKET = 'photos', PAGE = 100;
+
+  /* Erorile serviciului de fisiere poarta starea in alt loc decat cele ale bazei de date: in statusCode, cu starea
+     adevarata scrisa de server in raspuns, sau, la descarcare, in originalError, care este chiar raspunsul serverului. */
+  function normFile(error) {
+    var e = error || {}, o = e.originalError, n;
+    if (o && typeof o.status === 'number' && !o.message) return { code: '', message: 'HTTP ' + o.status, status: o.status, offline: false };
+    n = norm(o && !e.message ? o : e);
+    if (!n.offline && o) n = norm(o);
+    if (!n.offline) n.status = Number(e.statusCode) || Number(e.status) || n.status;
+    n.code = String(e.error || n.code || '');
+    return n;
+  }
+
+  function files(work) {
+    return load().then(function (c) { return work(c.storage.from(BUCKET)); }).then(function (r) {
+      if (r.error) throw normFile(r.error);
+      return r.data;
+    }, function (err) { throw err && err.offline !== undefined ? err : norm(err); });
+  }
+
+  /* Incarca o poza. Daca fisierul exista deja, incarcarea de dinainte a reusit de fapt, deci e in regula. */
+  function photoUpload(path, blob) {
+    return files(function (f) {
+      return f.upload(path, blob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false });
+    }).then(function () { return true; }, function (err) {
+      if (err.status === 409 || /already exists|duplicate/i.test(err.message + ' ' + err.code)) return true;
+      throw err;
+    });
+  }
+
+  function photoGet(path) { return files(function (f) { return f.download(path); }); }
+
+  /* Sterge pozele cu adresele date. Una care nu mai exista nu este o eroare. */
+  function photoRemove(paths) {
+    function part(from) {
+      if (from >= paths.length) return Promise.resolve(true);
+      return files(function (f) { return f.remove(paths.slice(from, from + PAGE)); }).then(function () { return part(from + PAGE); });
+    }
+    return part(0);
+  }
+
+  /* Numele tuturor pozelor din dosarul unui utilizator. */
+  function photoList(folder) {
+    var all = [];
+    function page(offset) {
+      return files(function (f) { return f.list(folder, { limit: PAGE, offset: offset, sortBy: { column: 'name', order: 'asc' } }); }).then(function (rows) {
+        rows = Array.isArray(rows) ? rows : [];
+        rows.forEach(function (r) { if (r && r.name && r.id) all.push(r.name); });
+        return rows.length === PAGE ? page(offset + PAGE) : all;
+      });
+    }
+    return page(0);
+  }
+
   return {
     enabled: enabled, load: load, current: current, signUp: signUp, signIn: signIn, signOut: signOut, rpc: rpc,
+    photoUpload: photoUpload, photoGet: photoGet, photoRemove: photoRemove, photoList: photoList,
     onAuth: function (fn) { onAuth = fn; }
   };
 })();

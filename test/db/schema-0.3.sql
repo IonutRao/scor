@@ -1,7 +1,8 @@
--- Scorul zilei: baza de date pentru versiunea 0.2
+-- Scorul zilei: baza de date (versiunea 0.3: activitatile pot avea detalii)
 --
 -- Se lipeste in Supabase, la SQL Editor, si se apasa Run.
 -- Poate fi rulat din nou oricand: nu sterge si nu modifica datele existente.
+-- Aduce la zi si o baza creata cu o versiune mai veche a acestui script.
 --
 -- Ce contine:
 --   1. tabelele: profiles, settings, entries, cheers
@@ -64,6 +65,21 @@ create table if not exists public.entries (
 create index if not exists entries_user_ts on public.entries (user_id, ts desc);
 create index if not exists entries_public_ts on public.entries (ts desc) where is_public;
 
+-- Detaliile unei activitati (din versiunea 0.3): cateva randuri, optionale. Le vede cine vede activitatea.
+alter table public.entries add column if not exists note text;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'entries_note_ok' and conrelid = 'public.entries'::regclass
+  ) then
+    alter table public.entries add constraint entries_note_ok check (
+      note is null
+      or (char_length(note) between 1 and 300 and note = btrim(note, E' \n') and note !~ '[\x01-\x09\x0B-\x1F\x7F]')
+    );
+  end if;
+end
+$$;
+
 -- Incurajarile: cel mult una de la un utilizator pentru o activitate.
 create table if not exists public.cheers (
   entry_id uuid not null references public.entries (id) on delete cascade,
@@ -93,10 +109,10 @@ grant select on public.settings to authenticated;
 grant insert (user_id, favs, updated_at) on public.settings to authenticated;
 grant update (favs, updated_at) on public.settings to authenticated;
 
--- La activitati se poate schimba ulterior doar vizibilitatea. Numarul de incurajari nu poate fi scris de nimeni.
+-- La activitati se pot schimba ulterior doar vizibilitatea si detaliile. Numarul de incurajari nu poate fi scris de nimeni.
 grant select, delete on public.entries to authenticated;
-grant insert (id, user_id, day, ts, type, pts, key, name, is_public, lang) on public.entries to authenticated;
-grant update (is_public) on public.entries to authenticated;
+grant insert (id, user_id, day, ts, type, pts, key, name, is_public, lang, note) on public.entries to authenticated;
+grant update (is_public, note) on public.entries to authenticated;
 
 grant select, delete on public.cheers to authenticated;
 grant insert (entry_id, user_id) on public.cheers to authenticated;
@@ -226,17 +242,35 @@ begin
 end
 $$;
 
+-- Aduce detaliile scrise de om la forma pastrata: randuri curate, cel mult 300 de caractere, sau nimic daca nu ramane nimic.
+create or replace function public.note_text(p text) returns text
+language sql immutable set search_path = '' as $$
+  select nullif(btrim(left(btrim(
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(coalesce(p, ''), E'\r\n?', E'\n', 'g'),
+        '[\x01-\x09\x0B-\x1F\x7F]', ' ', 'g'),
+      E'\n{3,}', E'\n\n', 'g'),
+    E' \n'), 300), E' \n'), '');
+$$;
+
 -- Un singur drum: primeste schimbarile facute pe dispozitiv si intoarce starea contului.
---   p_add  activitati noi: [{id, day, ts (milisecunde), type, pts, key sau name, pub}]
+--   p_add  activitati noi: [{id, day, ts (milisecunde), type, pts, key sau name, pub, note}]
 --   p_del  id-urile activitatilor sterse
 --   p_vis  schimbari de vizibilitate: [{id, pub}]
 --   p_favs lista de favorite, daca s-a schimbat
+--   p_note detalii schimbate sau sterse: [{id, note}]
+-- Raspunsul poarta si versiunea acestui script (v), ca aplicatia sa stie ce poate cere.
+-- Forma veche, fara p_note, este stearsa: altfel ar exista doua functii cu acelasi nume. Aplicatiile mai vechi,
+-- care nu trimit p_note, o folosesc pe cea noua fara nicio schimbare.
+drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text);
 create or replace function public.sync(
   p_add jsonb default '[]'::jsonb,
   p_del jsonb default '[]'::jsonb,
   p_vis jsonb default '[]'::jsonb,
   p_favs jsonb default null,
-  p_lang text default 'ro'
+  p_lang text default 'ro',
+  p_note jsonb default '[]'::jsonb
 ) returns jsonb
 language plpgsql security invoker set search_path = '' as $$
 declare
@@ -260,7 +294,7 @@ begin
     end if;
     for v_item in select x from jsonb_array_elements(p_add) x loop
       begin
-        insert into public.entries (id, user_id, day, ts, type, pts, key, name, is_public, lang)
+        insert into public.entries (id, user_id, day, ts, type, pts, key, name, is_public, lang, note)
         values (
           (v_item->>'id')::uuid,
           v_uid,
@@ -271,7 +305,8 @@ begin
           v_item->>'key',
           v_item->>'name',
           coalesce((v_item->>'pub')::boolean, false),
-          v_lang
+          v_lang,
+          public.note_text(v_item->>'note')
         )
         on conflict (id) do nothing;
       exception when others then
@@ -303,6 +338,18 @@ begin
     where e.user_id = v_uid and e.id = v.id;
   end if;
 
+  -- Detalii schimbate dupa notare. Cu text gol sau cu null, detaliile se sterg. Orice altceva este ignorat.
+  if jsonb_typeof(p_note) = 'array' then
+    update public.entries e
+    set note = public.note_text(n.note)
+    from (
+      select case when (x->>'id') ~ v_uuid then (x->>'id')::uuid end as id, x->>'note' as note
+      from jsonb_array_elements(p_note) x
+      where jsonb_typeof(x) = 'object' and jsonb_typeof(x->'note') in ('string', 'null')
+    ) n
+    where e.user_id = v_uid and e.id = n.id;
+  end if;
+
   if p_favs is not null and jsonb_typeof(p_favs) = 'array' then
     insert into public.settings (user_id, favs, updated_at) values (v_uid, p_favs, now())
     on conflict (user_id) do update set favs = excluded.favs, updated_at = excluded.updated_at;
@@ -315,18 +362,19 @@ begin
       select jsonb_agg(jsonb_build_object(
         'id', e.id, 'day', e.day, 'ts', (extract(epoch from e.ts) * 1000)::bigint,
         'type', e.type, 'pts', e.pts, 'key', e.key, 'name', e.name,
-        'pub', e.is_public, 'cheers', e.cheers_count
+        'pub', e.is_public, 'cheers', e.cheers_count, 'note', e.note
       ) order by e.ts desc)
       from public.entries e where e.user_id = v_uid
     ), '[]'::jsonb),
     'favs', v_favs,
     'rejected', v_rejected,
-    'now', (extract(epoch from now()) * 1000)::bigint
+    'now', (extract(epoch from now()) * 1000)::bigint,
+    'v', 3
   );
 end
 $$;
 
--- Fluxul: cele mai noi activitati publice. Fara nimic privat, fara adrese de email.
+-- Fluxul: cele mai noi activitati publice, cu detaliile lor. Fara nimic privat, fara adrese de email.
 create or replace function public.feed(
   p_lang text default null,
   p_before bigint default null,
@@ -339,7 +387,7 @@ language sql stable security invoker set search_path = '' as $$
       e.id,
       p.name as author,
       (e.user_id = (select auth.uid())) as mine,
-      e.type, e.pts, e.key, e.name, e.lang,
+      e.type, e.pts, e.key, e.name, e.lang, e.note,
       (extract(epoch from e.ts) * 1000)::bigint as ts,
       e.cheers_count as cheers,
       exists (
@@ -397,7 +445,8 @@ $$;
 -- Functiile pot fi apelate doar de utilizatori autentificati.
 revoke all on function public.me() from public, anon;
 revoke all on function public.set_name(text) from public, anon;
-revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text) from public, anon;
+revoke all on function public.note_text(text) from public, anon;
+revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb) from public, anon;
 revoke all on function public.feed(text, bigint, integer) from public, anon;
 revoke all on function public.cheer(uuid, boolean) from public, anon;
 revoke all on function public.delete_my_account() from public, anon;
@@ -406,7 +455,8 @@ revoke all on function public.tg_entries_clamp() from public, anon, authenticate
 
 grant execute on function public.me() to authenticated;
 grant execute on function public.set_name(text) to authenticated;
-grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text) to authenticated;
+grant execute on function public.note_text(text) to authenticated;
+grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb) to authenticated;
 grant execute on function public.feed(text, bigint, integer) to authenticated;
 grant execute on function public.cheer(uuid, boolean) to authenticated;
 grant execute on function public.delete_my_account() to authenticated;
