@@ -2,6 +2,7 @@ artifact/
 test/shots/
 test/_all.js
 test/artifact-preview.html
+test/local/
 __pycache__/
 *.pyc
 .DS_Store

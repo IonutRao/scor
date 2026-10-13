@@ -5,7 +5,7 @@ import sys
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parent.parent
-SITE = (ROOT / "index.html").as_uri()
+SITE = (ROOT / "test" / "local" / "index.html").as_uri()
 ART = (ROOT / "test" / "artifact-preview.html").as_uri()
 SHOTS = ROOT / "test" / "shots"
 SHOTS.mkdir(parents=True, exist_ok=True)
@@ -278,7 +278,7 @@ with sync_playwright() as p:
     # --- pornire fara internet, prin service worker ---
     import subprocess
     import time
-    srv = subprocess.Popen([sys.executable, "-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", str(ROOT)],
+    srv = subprocess.Popen([sys.executable, "-m", "http.server", "8765", "--bind", "127.0.0.1", "--directory", str(ROOT / "test" / "local")],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.2)
     ctx3 = browser.new_context(**opts)

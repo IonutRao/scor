@@ -7,6 +7,7 @@
 """
 import json
 import pathlib
+import shutil
 
 from PIL import Image, ImageDraw
 
@@ -115,11 +116,8 @@ self.addEventListener('fetch', (event) => {
 """
 
 
-def main():
-    for d in (ART, TEST):
-        d.mkdir(parents=True, exist_ok=True)
-
-    site_html = "\n".join([
+def page(cfg):
+    return "\n".join([
         "<!doctype html>",
         '<html lang="ro">',
         "<head>",
@@ -142,11 +140,18 @@ def main():
         css + "</style>",
         "</head>",
         "<body>",
-        body + script(site_config()) + "</body>",
+        body + script(cfg) + "</body>",
         "</html>",
         "",
     ])
-    (SITE / "index.html").write_text(site_html, encoding="utf-8")
+
+
+def main():
+    local = TEST / "local"
+    for d in (ART, TEST, local):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (SITE / "index.html").write_text(page(site_config()), encoding="utf-8")
 
     manifest = {
         "name": TITLE, "short_name": "Scor",
@@ -169,6 +174,11 @@ def main():
     icon(512).save(SITE / "icon-512.png")
     icon(512, 0.78).save(SITE / "icon-maskable-512.png")
     icon(180).save(SITE / "apple-touch-icon.png")
+
+    # Aceeasi aplicatie in modul local, fara server, pentru test/flow.py. Nu se urca in repo.
+    (local / "index.html").write_text(page({"pwa": True}), encoding="utf-8")
+    for n in ("manifest.webmanifest", "sw.js", "favicon.svg", "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"):
+        shutil.copyfile(SITE / n, local / n)
 
     # Pagina de previzualizare: fara doctype, head sau body, cu titlul si stilul la inceput. Ramane in modul local.
     art_html = f"<title>{TITLE}</title>\n{FONT}\n<style>\n{css}</style>\n{body}{script({'demo': True, 'lang': 'ro'})}"
