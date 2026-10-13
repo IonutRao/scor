@@ -31,6 +31,22 @@ Motivational web app. People log good deeds (plus points) and less good ones (mi
 - Look: Manrope, one light theme, tokens at the top of `src/app.css`: indigo ink and score cards, mint for plus, coral for minus, gold for rewards.
 - Kept deliberately small: no leaderboards and no comments in the first versions.
 
+## Accounts and feed (version 0.2)
+
+- Backend is Supabase, project URL in `src/config.json`. With URL and publishable key filled in, the build runs with accounts; with either one empty it stays in the device-only mode of 0.1. The preview artifact always stays device-only.
+- `supabase/schema.sql` is the whole database: tables, grants, row level security, triggers and the functions the app calls (`me`, `set_name`, `sync`, `feed`, `cheer`, `delete_my_account`). It is idempotent; the owner pastes it into the Supabase SQL Editor. The app talks to the database only through those functions.
+- `src/api.js` is the only file that touches the network. It loads supabase-js from the CDN URL in `src/config.json`.
+- The app is local-first: screens render from local data, `sync()` in `src/app.js` sends pending changes and pulls the account state in one call.
+- `src/social.css` holds the styles for accounts, visibility and the feed; it is concatenated after `app.css`.
+- Tests: `test/db/start.sh` starts a local PostgreSQL shaped like a Supabase project and loads the schema; `psql -h 127.0.0.1 -p 54329 -U postgres -d postgres -f test/db/security.sql` checks the access rules (also run with `SCOR_STRICT=1`); `python3 test/accounts.py` walks the app with several users against `test/server.py`, a stand-in for Supabase that uses `test/fake-supabase.js` in place of supabase-js.
+- The sandbox cannot reach Supabase, npm or CDNs, so the real supabase-js and the real project are never exercised here. The first run against the real project has to be checked by the owner on the live site.
+
+### Status on 2026-10-13
+
+- 0.2 is built and passes all local tests on branch `claude/surse-si-v0.2`. It is not merged; `main` still serves 0.1.
+- Still to do, one step at a time with the owner: get the publishable key into `src/config.json`, have him run `supabase/schema.sql`, turn off "Confirm email" for the test phase, rebuild, publish to `main`, then test sign-up on the live site.
+- Password reset is not built yet: Supabase's built-in email only reaches project team members, so it needs a custom SMTP service and a domain first.
+
 ## Conventions
 
 - Plain JavaScript without a build step or framework, so the whole app is one self-contained `index.html`.

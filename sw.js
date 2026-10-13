@@ -1,6 +1,8 @@
 /* Scorul zilei: face aplicatia sa porneasca si fara internet. */
-const CACHE = 'scor-0.1';
+const CACHE = 'scor-0.2';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg', './icon-192.png', './icon-512.png'];
+/* Fonturile si biblioteca de cont vin din afara si se pastreaza dupa prima incarcare. */
+const KEEP = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -35,9 +37,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  /* Iconite si fonturi: din copia salvata, altfel de pe internet si se pastreaza. */
-  const fonts = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
-  if (url.origin === self.location.origin || fonts) {
+  /* Fisierele aplicatiei, fonturile si biblioteca: din copia salvata, altfel de pe internet si se pastreaza.
+     Cererile catre server (conturi, date) nu trec pe aici niciodata. */
+  if (url.origin === self.location.origin || KEEP.includes(url.hostname)) {
     event.respondWith(
       caches.match(req).then((hit) => hit || fetch(req).then((res) => {
         if (res.ok || res.type === 'opaque') {
