@@ -659,6 +659,183 @@ try:
         ctx_g.close()
         ctx_h.close()
 
+        # ------------------------------------------------------------ detalii la o activitate
+        urllib.request.urlopen(BASE + "/__test/set?feed=1000").read()
+        ctx_ma, ma = new_page()
+        sign_up(ma, "maria@example.test", "parola-maria-7", "Maria")
+        ma.wait_for_selector("#score")
+        ctx_ne, ne = new_page()
+        sign_up(ne, "nelu@example.test", "parola-nelu-88", "Nelu")
+        ne.wait_for_selector("#score")
+
+        ma.click("a.btn-plus")
+        soft(lambda: ma.wait_for_selector("#note-row", timeout=8000), "cu baza de date la zi, formularul ofera randul Detalii")
+        ma.fill("#act-name", "Am ajutat un coleg")
+        ma.click('[data-act="note-open"]')
+        check(text(ma, "#act-note-h") == "Le vede cine vede activitatea.", "sub camp scrie cine vede detaliile")
+        typed = "  I-am arătat cum să își facă un cont.\r\n\n\n\nA durat o jumătate de oră. <b>țin minte</b> \t "
+        clean = "I-am arătat cum să își facă un cont.\n\nA durat o jumătate de oră. <b>țin minte</b>"
+        ma.fill("#act-note", typed)
+        ma.click('[data-act="pub"][data-v="1"]')
+        check(ma.input_value("#act-note").strip().startswith("I-am arătat"), "detaliile raman dupa alegerea vizibilitatii")
+        shot(ma, "c15-detalii-notare.png", full=True)
+        ma.click("#save-btn")
+        ma.wait_for_selector("#score")
+        row = '#today-list .row:has-text("Am ajutat un coleg")'
+        check(ma.locator(row + " .note-ic").count() == 1, "in lista de azi activitatea poarta semnul de detalii")
+        soft(lambda: saved(ma), "activitatea cu detalii ajunge in cont")
+        check(db("select note from public.entries where name = 'Am ajutat un coleg'") == clean, "in baza: detaliile sunt pastrate curate, cu diacritice si randuri")
+
+        ne.click('#nav a[data-route="flux"]')
+        post = '#feed-list .post:has-text("Am ajutat un coleg")'
+        soft(lambda: wait_count(ne, post, 1), "activitatea apare in fluxul lui Nelu")
+        check(ne.locator(post + " .post-more .note-ic").count() == 1, "in flux titlul poarta semnul de detalii")
+        check(ne.locator(post + " .post-note").count() == 0 and "I-am arătat" not in text(ne, "#feed-list"), "detaliile nu se vad pana nu apesi pe activitate")
+        check(ne.get_attribute(post + " .post-more", "aria-expanded") == "false", "titlul spune ca detaliile sunt stranse")
+        ne.click(post + " .post-more")
+        check(text(ne, post + " .post-note") == clean, "la apasare apar detaliile, intregi: " + repr(text(ne, post + " .post-note")))
+        check(ne.locator(post + " .post-note b").count() == 0, "detaliile altcuiva sunt aratate ca text, niciodata ca marcaje")
+        check(ne.get_attribute(post + " .post-more", "aria-expanded") == "true", "titlul spune ca detaliile sunt deschise")
+        shot(ne, "c16-detalii-flux.png")
+        no_overflow(ne, "flux cu detalii 390")
+        ne.wait_for_timeout(2600)
+        check(ne.locator(post + " .post-note").count() == 1, "detaliile raman deschise cand fluxul se improspateaza singur")
+        ne.click(post + " .cheer")
+        soft(lambda: wait_text(ne, post + " .cheer", "Încurajat"), "o activitate cu detalii se incurajeaza la fel")
+        check(ne.locator(post + " .post-note").count() == 1, "iar detaliile raman deschise")
+
+        # Maria schimba detaliile mai tarziu; Nelu le vede schimbate fara sa atinga nimic.
+        ma.click('#nav a[data-route="azi"]')
+        ma.click(row)
+        check(text(ma, "#dlg-n") == clean and text(ma, "#dlg-link") == "Schimbă detaliile", "dialogul Mariei arata detaliile si ofera schimbarea lor")
+        shot(ma, "c17-detalii-dialog.png")
+        ma.click("#dlg-link")
+        check(text(ma, "h1") == "Detalii" and "Le vede cine vede activitatea." in text(ma, "#note-input-h"), "ecranul de detalii spune cine le vede")
+        ma.fill("#note-input", "I-am arătat cum să își facă un cont. Mâine îi arăt și restul.")
+        ma.click("#note-btn")
+        soft(lambda: wait_text(ne, post + " .post-note", "Mâine îi arăt și restul."), "detaliile schimbate apar singure la Nelu")
+        check(db("select note from public.entries where name = 'Am ajutat un coleg'") == "I-am arătat cum să își facă un cont. Mâine îi arăt și restul.", "in baza: detaliile schimbate")
+        check(db("select cheers_count from public.entries where name = 'Am ajutat un coleg'") == "1", "in baza: incurajarea a ramas dupa schimbarea detaliilor")
+
+        # O activitate privata cu detalii ramane cu totul privata.
+        add(ma, "minus", name="Ceva de tinut pentru mine")
+        ma.click('#today-list .row:has-text("Ceva de tinut pentru mine")')
+        ma.click("#dlg-link")
+        ma.fill("#note-input", "Numai eu citesc asta.")
+        ma.click("#note-btn")
+        soft(lambda: saved(ma), "detaliile adaugate mai tarziu ajung in cont")
+        check(db("select note || '/' || is_public from public.entries where name = 'Ceva de tinut pentru mine'") == "Numai eu citesc asta./false", "in baza: activitate privata, cu detalii")
+        ne.click('[data-act="feed-refresh"]')
+        ne.wait_for_timeout(800)
+        check("Numai eu citesc" not in ne.content() and "Ceva de tinut" not in ne.content(), "nimic din activitatea privata nu ajunge la Nelu")
+
+        # Si o favorita poate primi detalii.
+        ma.click('#nav a[data-route="azi"]')
+        ma.click("a.btn-plus")
+        ma.click('.chip:has-text("Sală")')
+        ma.click('[data-act="note-open"]')
+        ma.fill("#act-note", "picioare, 45 de minute")
+        ma.click("#save-btn")
+        soft(lambda: saved(ma), "favorita cu detalii ajunge in cont")
+        check(db("select key || '/' || note from public.entries e join public.profiles p on p.id = e.user_id where p.name = 'Maria' and key is not null") == "gym/picioare, 45 de minute", "in baza: favorita pastrata dupa cheie, cu detaliile ei")
+
+        # Detalii schimbate chiar cat timp activitatea este pe drum spre cont: ramane ultima varianta.
+        ma.click('#nav a[data-route="azi"]')
+        onway = []
+        ma.route("**/rest/v1/rpc/sync", lambda r: r.continue_() if onway else onway.append(r))
+        ma.click("a.btn-plus")
+        ma.fill("#act-name", "Pe drum")
+        ma.click('[data-act="note-open"]')
+        ma.fill("#act-note", "prima varianta")
+        ma.click("#save-btn")
+        soft(lambda: until(ma, lambda: len(onway) >= 1, "salvarea oprita pe drum", 6000), "salvarea activitatii noi este tinuta pe drum")
+        ma.click('#today-list .row:has-text("Pe drum")')
+        ma.click("#dlg-link")
+        ma.fill("#note-input", "a doua varianta")
+        ma.click("#note-btn")
+        check(db("select count(*) from public.entries where name = 'Pe drum'") == "0", "activitatea inca nu a ajuns in baza")
+        onway[0].continue_()
+        soft(lambda: saved(ma), "dupa ce drumul se incheie, totul ajunge in cont")
+        ma.unroute("**/rest/v1/rpc/sync")
+        check(db("select note from public.entries where name = 'Pe drum'") == "a doua varianta", "in baza a ramas varianta scrisa ultima")
+        ma.click('#nav a[data-route="azi"]')
+        ma.click('#today-list .row:has-text("Pe drum")')
+        check(text(ma, "#dlg-n") == "a doua varianta", "si pe ecran la fel")
+        ma.click("#dlg-ok")
+        soft(lambda: saved(ma), "activitatea de proba este stearsa")
+
+        # Fara internet, schimbarea asteapta si pleaca singura mai tarziu.
+        ma.click('#nav a[data-route="azi"]')
+        ma.route("**/rest/v1/rpc/sync", lambda r: r.abort())
+        ma.click(row)
+        ma.click("#dlg-link")
+        ma.fill("#note-input", "")
+        ma.click("#note-btn")
+        check(ma.locator(row + " .note-ic").count() == 0, "fara internet, stergerea detaliilor se vede imediat")
+        soft(lambda: wait_text(ma, "#pending", "În așteptare: 1 modificare."), "si este numarata ca modificare in asteptare")
+        check(db("select note is not null from public.entries where name = 'Am ajutat un coleg'") == "t", "in baza detaliile inca exista")
+        ma.unroute("**/rest/v1/rpc/sync")
+        ma.click('#nav a[data-route="profil"]')
+        ma.click('[data-act="sync-now"]')
+        soft(lambda: wait_text(ma, "#sync-status", "Totul e salvat în cont", 10000), "cand revine internetul, stergerea pleaca")
+        check(db("select note is null from public.entries where name = 'Am ajutat un coleg'") == "t", "in baza: detaliile au fost sterse")
+        soft(lambda: wait_count(ne, post + " .post-more", 0), "la Nelu titlul nu mai poarta semnul si nu se mai deschide")
+        check(ne.locator(post + " .post-note").count() == 0 and ne.locator(post + " .post-t").count() == 1, "iar activitatea ramane in flux, fara detalii")
+
+        # Pe un alt dispozitiv detaliile vin din cont.
+        ctx_m2, m2 = new_page()
+        sign_in(m2, "maria@example.test", "parola-maria-7")
+        soft(lambda: wait_count(m2, "#today-list .row", 3), "pe al doilea dispozitiv apar cele trei activitati ale Mariei")
+        m2.click('#today-list .row:has-text("Ceva de tinut pentru mine")')
+        check(text(m2, "#dlg-n") == "Numai eu citesc asta.", "cu detaliile lor")
+        m2.click("#dlg-cancel")
+        ctx_m2.close()
+
+        # Aplicatia si baza de date curata detaliile dupa aceeasi regula.
+        samples = ["  a  ", "a\r\nb\rc", "a\n\n\n\n\nb", "\n\n a \n\n", "a\tb\u0001c", "", " \n ", "ș" * 400, "ab " * 200, "😀" * 400,
+                   "x \n\n\n y", "a\u007fb", " \t a", "rând\n\n\n", "Țigară și cafea, în oraș", "a\n \n \n \nb", "  \r\n  două rânduri\r\n\r\n\r\n\r\ngata  "]
+        diff = []
+        for sample in samples:
+            js = ma.evaluate("(s) => L.cleanNote(s)", sample)
+            sql = json.loads(db("select to_jsonb(coalesce(public.note_text($j$%s$j$::jsonb #>> '{}'), ''))::text" % json.dumps(sample)))
+            if js != sql:
+                diff.append(repr(sample)[:30])
+        check(not diff, "aplicatia si baza de date curata detaliile la fel: " + ", ".join(diff))
+
+        # O baza de date ramasa la versiunea veche: aplicatia merge, doar ca nu ofera detalii.
+        ctx_o, o = new_page()
+        sent_notes = []
+
+        def old_server(route):
+            body = route.request.post_data_json or {}
+            if "p_note" in body:
+                sent_notes.append(body["p_note"])
+            resp = route.fetch()
+            data = resp.json()
+            data.pop("v", None)
+            route.fulfill(response=resp, json=data)
+
+        o.route("**/rest/v1/rpc/sync", old_server)
+        sign_in(o, "maria@example.test", "parola-maria-7")
+        soft(lambda: wait_count(o, "#today-list .row", 3), "cu un server vechi, Maria isi vede activitatile")
+        soft(lambda: saved(o), "si salvarea in cont merge")
+        o.click('#nav a[data-route="azi"]')
+        o.click("a.btn-plus")
+        check(o.locator("#note-row").count() == 0 and o.locator("#act-note").count() == 0, "formularul nu ofera detalii cat timp serverul nu le poate pastra")
+        o.click('.chip:has-text("Citit")')
+        o.click("#save-btn")
+        soft(lambda: saved(o), "o activitate noua se salveaza ca inainte")
+        o.click('#nav a[data-route="azi"]')
+        o.click('#today-list .row:has-text("Ceva de tinut pentru mine")')
+        check(text(o, "#dlg-n") == "Numai eu citesc asta." and o.locator("#dlg-link").is_hidden(), "detaliile existente se vad, dar nu pot fi schimbate")
+        o.click("#dlg-cancel")
+        check(not sent_notes, "aplicatia nu trimite niciodata schimbari de detalii unui server vechi")
+        ctx_o.close()
+
+        urllib.request.urlopen(BASE + "/__test/set?feed=0").read()
+        ctx_ma.close()
+        ctx_ne.close()
+
         check(not errs, "fara erori in consola: " + "; ".join(errs[:3]))
         browser.close()
 finally:

@@ -5,11 +5,13 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.2.2';
+  var VERSION = '0.3';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
-  var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'nume'] : ['plus', 'minus']);
+  var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume'] : ['plus', 'minus', 'detalii']);
+  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii. */
+  var NOTES_FROM = 3;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
      si la cat timp se improspateaza singur cat e pe ecran. */
@@ -33,13 +35,18 @@
     starFlat: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="' + STAR + '"/></svg>',
     starLine: '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" stroke-width="2" stroke-linejoin="round"><path d="' + STAR + '"/></svg>',
     close: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>',
-    x: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+    x: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+    note: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h9"/></svg>'
   };
 
   var data, lang, route = 'azi';
   /* Starea contului: local (fara server), loading, out (neautentificat), name (fara nume ales), in. */
   var auth = BACKEND ? 'loading' : 'local';
-  var add = { type: 'plus', favId: null, name: '', pts: 10, keep: false, pub: false };
+  var add = { type: 'plus', favId: null, name: '', pts: 10, keep: false, pub: false, note: '', noteOpen: false };
+  /* Ecranul pe care se scriu sau se schimba detaliile unei activitati deja notate, si ecranul de pe care s-a ajuns acolo. */
+  var noteForm = { id: null, value: '', back: 'azi' };
+  /* Activitatile din flux ale caror detalii sunt deschise acum. */
+  var openNotes = {};
   var authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
   var nameForm = { value: '', busy: false, error: '' };
   /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
@@ -48,7 +55,7 @@
   var feed = newFeed();
   var openDays = {};
   var appEl, viewEl, navEl, toastEl, dlg;
-  var toastTimer = null, dlgOk = null, dlgExtra = null, dlgOpener = null, shownDay = '';
+  var toastTimer = null, dlgOk = null, dlgExtra = null, dlgLink = null, dlgOpener = null, shownDay = '';
   var syncing = false, syncAgain = false, syncTimer = null, syncErr = '', syncFails = 0, inflight = {};
 
   /* ---------- mici ajutoare ---------- */
@@ -146,7 +153,7 @@
   function fresh() {
     return {
       v: 2, lang: null, demo: false, uid: null, name: '', email: '', entries: [], favs: defaultFavs(),
-      favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [] }, lastSync: 0, pubDefault: false
+      favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [] }, lastSync: 0, pubDefault: false, sv: 0
     };
   }
 
@@ -174,6 +181,8 @@
     d.favsRev = d.favsRev || 0;
     d.favsSynced = d.favsSynced || 0;
     d.outbox = d.outbox && Array.isArray(d.outbox.del) && Array.isArray(d.outbox.vis) ? d.outbox : { del: [], vis: [] };
+    if (!Array.isArray(d.outbox.note)) d.outbox.note = [];
+    d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
     d.pubDefault = !!d.pubDefault;
     d.entries = d.entries.filter(function (e) { return okItem(e) && /^\d{4}-\d{2}-\d{2}$/.test(e.day) && typeof e.id === 'string'; });
@@ -182,6 +191,8 @@
       if (e.sync !== 0) e.sync = 1;
       e.pub = !!e.pub;
       e.cheers = e.cheers > 0 ? e.cheers : 0;
+      var note = typeof e.note === 'string' ? L.cleanNote(e.note) : '';
+      if (note) e.note = note; else delete e.note;
     });
     d.favs = cleanFavs(d.favs);
     return d;
@@ -231,11 +242,13 @@
   function findFav(id) { for (var i = 0; i < data.favs.length; i++) if (data.favs[i].id === id) return data.favs[i]; return null; }
   function findEntry(id) { for (var i = 0; i < data.entries.length; i++) if (data.entries[i].id === id) return data.entries[i]; return null; }
   function myCheers() { return data.entries.reduce(function (s, e) { return s + (e.cheers || 0); }, 0); }
+  /* Detaliile se pot scrie pe dispozitiv oricand; cu cont, doar daca baza de date a fost adusa la versiunea care le pastreaza. */
+  function notesOn() { return !BACKEND || data.sv >= NOTES_FROM; }
 
   /* ---------- salvarea in cont ---------- */
 
   function pendingCount() {
-    var n = data.outbox.del.length + data.outbox.vis.length + (data.favsRev !== data.favsSynced ? 1 : 0);
+    var n = data.outbox.del.length + data.outbox.vis.length + data.outbox.note.length + (data.favsRev !== data.favsSynced ? 1 : 0);
     for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1) n++;
     return n;
   }
@@ -252,26 +265,33 @@
     if (syncing) { syncAgain = true; return; }
     clearTimeout(syncTimer);
     var batch = data.entries.filter(function (e) { return e.sync === 1; }).slice(0, 300);
-    var sent = { ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), rev: data.favsRev, favs: data.favsRev !== data.favsSynced };
+    var sent = {
+      ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), note: data.outbox.note.slice(),
+      rev: data.favsRev, favs: data.favsRev !== data.favsSynced
+    };
     batch.forEach(function (e) { sent.ids[e.id] = true; });
     inflight = sent.ids;
     syncing = true;
-    API.rpc('sync', {
+    var args = {
       p_add: batch.map(function (e) {
         var o = { id: e.id, day: e.day, ts: e.ts, type: e.type, pts: e.pts, pub: !!e.pub };
         if (e.key) o.key = e.key; else o.name = e.name;
+        if (e.note) o.note = e.note;
         return o;
       }),
       p_del: sent.del,
       p_vis: sent.vis,
       p_favs: sent.favs ? data.favs : null,
       p_lang: lang
-    }).then(function (res) {
+    };
+    /* Un server ramas la o versiune mai veche nu cunoaste p_note; fara schimbari de detalii nu i se trimite. */
+    if (sent.note.length) args.p_note = sent.note;
+    API.rpc('sync', args).then(function (res) {
       applySync(res, sent);
       syncErr = '';
       syncFails = 0;
       /* Ce tocmai a plecat poate schimba fluxul: se reincarca acum sau la urmatoarea deschidere. */
-      if (batch.length || sent.del.length || sent.vis.length) {
+      if (batch.length || sent.del.length || sent.vis.length || sent.note.length) {
         feed.at = 0;
         if (route === 'flux') openFeed();
       }
@@ -281,7 +301,7 @@
       syncing = false;
       inflight = {};
       if (auth === 'in') {
-        if (route === 'flux') showFeed(); else render();
+        if (route === 'flux') showFeed(); else if (!typing()) render();
         if (syncErr) queueSync(Math.min(300000, 15000 * Math.pow(2, Math.min(syncFails, 5))));
         else if (syncAgain || pendingCount() > 0) queueSync(300);
       } else {
@@ -295,6 +315,7 @@
     if (!res || !Array.isArray(res.entries)) throw new Error('bad_response');
     data.outbox.del = data.outbox.del.filter(function (id) { return sent.del.indexOf(id) < 0; });
     data.outbox.vis = data.outbox.vis.filter(function (op) { return sent.vis.indexOf(op) < 0; });
+    data.outbox.note = data.outbox.note.filter(function (op) { return sent.note.indexOf(op) < 0; });
 
     var stillDeleting = {}, onServer = {}, next = [];
     data.outbox.del.forEach(function (id) { stillDeleting[id] = true; });
@@ -303,11 +324,18 @@
       if (stillDeleting[s.id]) return;
       var e = { id: s.id, ts: Number(s.ts), day: s.day, type: s.type, pts: s.pts, pub: !!s.pub, cheers: s.cheers || 0, sync: 0 };
       if (s.key) e.key = s.key; else e.name = s.name;
+      if (typeof s.note === 'string' && s.note) e.note = s.note;
       if (okItem(e)) next.push(e);
     });
     /* Ce s-a schimbat aici cat timp cererea era pe drum ramane valabil. */
     data.outbox.vis.forEach(function (op) {
       for (var i = 0; i < next.length; i++) if (next[i].id === op.id) next[i].pub = op.pub;
+    });
+    data.outbox.note.forEach(function (op) {
+      for (var i = 0; i < next.length; i++) {
+        if (next[i].id !== op.id) continue;
+        if (op.note) next[i].note = op.note; else delete next[i].note;
+      }
     });
     data.entries.forEach(function (e) {
       if (e.sync === 1 && !onServer[e.id] && !sent.ids[e.id]) next.push(e);
@@ -319,6 +347,7 @@
       if (Array.isArray(res.favs)) data.favs = cleanFavs(res.favs);
       else data.favsRev++; /* contul nu are inca favoritele: pleaca la drumul urmator */
     }
+    data.sv = Number(res.v) > 0 ? Number(res.v) : 0;
     data.lastSync = Date.now();
     persist();
   }
@@ -508,6 +537,8 @@
     authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
     feed = newFeed();
     openDays = {};
+    openNotes = {};
+    noteForm = { id: null, value: '', back: 'azi' };
     syncErr = '';
     route = 'azi';
     try { window.history.replaceState(null, '', '#azi'); } catch (e) { /* merge si fara istoric */ }
@@ -735,9 +766,21 @@
     return s + ' · ' + tr('publicL') + (e.cheers ? ' · ' + count(e.cheers, tr('cheerForms')) : '');
   }
 
+  /* Semnul mic care arata ca o activitate are detalii; textul ascuns il spune si cititoarelor de ecran.
+     Spatiul de dinainte nu se rupe, ca semnul sa nu ajunga singur pe randul urmator. */
+  function noteMark() { return '\u00A0<span class="note-ic">' + ICON.note + '<span class="sr">' + esc(tr('hasDetails')) + '</span></span>'; }
+
+  /* Campul de detalii. Randul nou de la inceput este cel pe care pagina il arunca oricum, ca textul sa ramana intreg. */
+  function noteField(id, value, hint, plain) {
+    return '<div class="field note-field"><label for="' + id + '"' + (plain ? ' class="sr"' : '') + '>' + esc(tr('details')) + '</label>' +
+      '<textarea id="' + id + '" name="note" rows="3" maxlength="' + L.NOTE_MAX + '" autocapitalize="sentences" placeholder="' + esc(tr('detailsPh')) + '" aria-describedby="' + id + '-h">\n' + esc(value) + '</textarea>' +
+      '<div class="hint-row"><span class="hint" id="' + id + '-h">' + esc(hint) + '</span>' +
+      '<span class="hint count" id="' + id + '-n">' + value.length + '/' + L.NOTE_MAX + '</span></div></div>';
+  }
+
   function rowEntry(e) {
     return '<li><button type="button" class="row" data-act="entry" data-id="' + esc(e.id) + '" data-focus="e-' + esc(e.id) + '">' +
-      '<span class="row-main"><span class="row-t">' + esc(nameOf(e)) + '</span><span class="row-s">' + esc(entrySub(e)) + '</span></span>' +
+      '<span class="row-main"><span class="row-t">' + esc(nameOf(e)) + (e.note ? noteMark() : '') + '</span><span class="row-s">' + esc(entrySub(e)) + '</span></span>' +
       '<span class="pill ' + e.type + '">' + L.fmt(L.signed(e)) + '</span></button></li>';
   }
 
@@ -793,6 +836,11 @@
           '<button type="button" class="seg-b" aria-pressed="' + !add.pub + '" data-act="pub" data-v="0" data-focus="pub-0">' + esc(tr('priv')) + '</button>' +
           '<button type="button" class="seg-b" aria-pressed="' + !!add.pub + '" data-act="pub" data-v="1" data-focus="pub-1">' + esc(tr('pub')) + '</button>' +
         '</div></div>';
+    /* Detaliile stau stranse intr-un rand pana cand omul vrea sa le scrie. */
+    var note = !notesOn() ? '' : add.noteOpen
+      ? noteField('act-note', add.note, BACKEND ? tr('detailsWho') : '')
+      : '<div class="line" id="note-row"><div><div class="line-t">' + esc(tr('details')) + '</div><div class="line-s">' + esc(tr('detailsSub')) + '</div></div>' +
+          '<button type="button" class="link" data-act="note-open" data-focus="note-open">' + esc(tr('addShort')) + '</button></div>';
     return '' +
       '<header class="head head-add"><h1 id="title" tabindex="-1">' + esc(tr('newActivity')) + '</h1>' +
         '<a class="icon-btn" href="#azi" data-route="azi" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a></header>' +
@@ -816,7 +864,7 @@
               '<output class="step-val" id="pts-val" aria-live="polite">' + add.pts + '</output>' +
               '<button type="button" class="round" data-act="step" data-d="1" data-focus="step-up" aria-label="' + esc(tr('more')) + '">+</button>' +
             '</div></div>' +
-          who +
+          who + note +
           '<label class="check" id="keep-row"' + (keepVisible() ? '' : ' hidden') + '><input type="checkbox" id="keep-fav"' + (add.keep ? ' checked' : '') + '><span>' + esc(tr('keepFav')) + '</span></label>' +
           '<div class="save-wrap"><button type="submit" class="save ' + add.type + '" id="save-btn">' + esc(saveLabel()) + '</button></div>' +
         '</form>' +
@@ -904,7 +952,11 @@
         return '<li class="post" data-post="' + esc(it.id) + '">' +
           '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b> · ' + esc(ago(Number(it.ts))) + '</span>' +
             '<span class="pill ' + (it.type === 'minus' ? 'minus' : 'plus') + '">' + L.fmt(sign) + '</span></div>' +
-          '<div class="post-t">' + esc(postTitle(it)) + '</div>' +
+          (it.note
+            ? '<button type="button" class="post-t post-more" data-act="post-note" data-id="' + esc(it.id) + '" data-focus="n-' + esc(it.id) + '" aria-expanded="' + !!openNotes[it.id] + '">' +
+                esc(postTitle(it)) + noteMark() + '</button>' +
+              (openNotes[it.id] ? '<p class="post-note">' + esc(it.note) + '</p>' : '')
+            : '<div class="post-t">' + esc(postTitle(it)) + '</div>') +
           '<div class="post-bot"><span class="post-n">' + esc(cheersText(it)) + '</span>' +
             (it.mine
               ? '<span class="post-n">' + esc(tr('yours')) + '</span>'
@@ -1034,6 +1086,19 @@
       '</div>';
   }
 
+  function viewNote() {
+    var e = findEntry(noteForm.id), today = L.dayKey(new Date());
+    if (!e) return '';
+    return '' +
+      '<header class="head head-add"><h1 id="title" tabindex="-1">' + esc(tr('details')) + '</h1>' +
+        '<a class="icon-btn" href="#' + noteForm.back + '" data-route="' + noteForm.back + '" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a></header>' +
+      '<div class="pad"><form id="note-form" novalidate>' +
+        '<p class="note-of"><b>' + esc(nameOf(e)) + '</b> · ' + esc(L.fmt(L.signed(e)) + ' · ' + dayTitle(e.day, today) + ', ' + timeOf(e.ts)) + '</p>' +
+        noteField('note-input', noteForm.value, (BACKEND ? tr('detailsWho') + ' ' : '') + tr('detailsEmpty'), true) +
+        '<div class="go"><button type="submit" class="save" id="note-btn">' + esc(tr('saveDetails')) + '</button></div>' +
+      '</form></div>';
+  }
+
   /* ---------- afisare ---------- */
 
   function renderNav(hidden) {
@@ -1049,15 +1114,19 @@
     var act = document.activeElement, fkey = null, fid = null, caret = null;
     if (act && viewEl.contains(act)) {
       fkey = act.getAttribute('data-focus');
-      if (act.tagName === 'INPUT' && act.id && act.type !== 'checkbox') {
+      if ((act.tagName === 'INPUT' || act.tagName === 'TEXTAREA') && act.id && act.type !== 'checkbox') {
         fid = act.id;
         try { caret = [act.selectionStart, act.selectionEnd]; } catch (e) { caret = null; }
       }
     }
     shownDay = L.dayKey(new Date());
+    if (route === 'detalii' && !findEntry(noteForm.id)) {
+      route = MAIN.indexOf(noteForm.back) >= 0 ? noteForm.back : 'azi';
+      try { window.history.replaceState(null, '', '#' + route); } catch (e) { /* merge si fara istoric */ }
+    }
     var gate = BACKEND && auth !== 'in';
     var adding = isAddRoute(route);
-    var full = gate || adding || route === 'nume';
+    var full = gate || adding || route === 'nume' || route === 'detalii';
     var html;
     if (gate) html = auth === 'out' ? viewAuth() : auth === 'name' ? viewName(true) : viewLoading();
     else if (adding) html = viewAdd();
@@ -1065,11 +1134,14 @@
     else if (route === 'flux') html = viewFeed();
     else if (route === 'profil') html = viewProfile();
     else if (route === 'nume') html = viewName(false);
+    else if (route === 'detalii') html = viewNote();
     else html = viewToday();
     appEl.classList.toggle('is-add', full);
     shownFeed = !gate && route === 'flux' ? html : '';
     viewEl.innerHTML = html;
     renderNav(full);
+    var areas = viewEl.querySelectorAll('textarea');
+    for (var a = 0; a < areas.length; a++) grow(areas[a]);
     if (fid) {
       var inp = byId(fid);
       if (inp) {
@@ -1080,6 +1152,25 @@
       var el = viewEl.querySelector('[data-focus="' + fkey + '"]');
       if (el) el.focus({ preventScroll: true });
     }
+  }
+
+  /* Omul scrie chiar acum intr-un camp de pe ecran. */
+  function typing() {
+    var el = document.activeElement;
+    return !!el && viewEl.contains(el) && (el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && el.type !== 'checkbox'));
+  }
+
+  /* Un camp cu mai multe randuri creste odata cu textul, ca sa nu se deruleze in interiorul lui. */
+  function grow(el) {
+    el.style.height = 'auto';
+    el.style.height = (el.scrollHeight + 3) + 'px';
+  }
+
+  function focusEnd(id) {
+    var el = byId(id);
+    if (!el) return;
+    el.focus();
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* fara pozitie */ }
   }
 
   function focusTitle() {
@@ -1104,11 +1195,13 @@
   function routeFromHash() {
     var h = '';
     try { h = (window.location.hash || '').replace(/^#/, ''); } catch (e) { h = ''; }
+    /* Ecranul de detalii are sens doar pentru o activitate aleasa; la o reincarcare a paginii nu mai exista una. */
+    if (h === 'detalii' && !findEntry(noteForm.id)) return 'azi';
     return ROUTES.indexOf(h) >= 0 ? h : 'azi';
   }
 
   function resetAdd(type) {
-    add = { type: type, favId: null, name: '', pts: 10, keep: false, pub: type === 'plus' && !!data.pubDefault };
+    add = { type: type, favId: null, name: '', pts: 10, keep: false, pub: type === 'plus' && !!data.pubDefault, note: '', noteOpen: false };
   }
 
   function enter(r) {
@@ -1120,7 +1213,7 @@
   }
 
   function navigate(r, replace) {
-    if (ROUTES.indexOf(r) < 0) r = 'azi';
+    if (ROUTES.indexOf(r) < 0 || (r === 'detalii' && !findEntry(noteForm.id))) r = 'azi';
     if (r === route && MAIN.indexOf(r) >= 0) {
       window.scrollTo(0, 0);
       if (r === 'flux' && auth === 'in') loadFeed(true);
@@ -1150,6 +1243,13 @@
     var body = byId('dlg-b');
     body.textContent = o.body || '';
     body.hidden = !o.body;
+    var note = byId('dlg-n');
+    note.textContent = o.note || '';
+    note.hidden = !o.note;
+    dlgLink = o.link ? o.link.fn : null;
+    var link = byId('dlg-link');
+    link.textContent = o.link ? o.link.label : '';
+    link.hidden = !o.link;
     var extra = byId('dlg-extra');
     extra.textContent = o.extra ? o.extra.label : '';
     extra.hidden = !o.extra;
@@ -1184,9 +1284,10 @@
   }
 
   function saveAdd() {
-    var input = byId('act-name');
+    var input = byId('act-name'), area = byId('act-note');
     if (input) add.name = input.value;
-    var name = add.name.trim();
+    if (area) add.note = area.value;
+    var name = add.name.trim(), note = notesOn() ? L.cleanNote(add.note) : '';
     if (!name) {
       var err = byId('name-err');
       if (err) err.hidden = false;
@@ -1199,6 +1300,7 @@
       pub: BACKEND && !!add.pub, cheers: 0, sync: 1
     };
     if (fav && fav.key && favName(fav) === name) entry.key = fav.key; else entry.name = name;
+    if (note) entry.note = note;
     data.entries.push(entry);
     if (add.keep && keepVisible()) {
       data.favs.push({ id: uuid(), type: add.type, name: name, pts: entry.pts });
@@ -1217,6 +1319,7 @@
     data.entries = data.entries.filter(function (x) { return x.id !== id; });
     if (BACKEND) {
       data.outbox.vis = data.outbox.vis.filter(function (op) { return op.id !== id; });
+      data.outbox.note = data.outbox.note.filter(function (op) { return op.id !== id; });
       /* Ce a ajuns deja pe server, sau e chiar acum pe drum, trebuie sters si acolo. */
       if (e.sync !== 1 || inflight[id]) data.outbox.del.push(id);
     }
@@ -1251,8 +1354,43 @@
       ok: tr('del'), cancel: tr('close'),
       onOk: function () { removeEntry(id); }
     };
+    if (e.note) o.note = e.note;
+    if (notesOn()) o.link = { label: tr(e.note ? 'editDetails' : 'addDetails'), fn: function () { openNote(id); } };
     if (BACKEND) o.extra = { label: tr(e.pub ? 'makePrivate' : 'makePublic'), fn: function () { setVisibility(id, !e.pub); } };
     openDialog(o);
+  }
+
+  /* Deschide ecranul pe care se scriu sau se schimba detaliile unei activitati deja notate. */
+  function openNote(id) {
+    var e = findEntry(id);
+    if (!e) return;
+    noteForm = { id: id, value: e.note || '', back: MAIN.indexOf(route) >= 0 ? route : 'azi' };
+    navigate('detalii');
+    focusEnd('note-input');
+  }
+
+  /* Pune, schimba sau sterge detaliile unei activitati. Intoarce true daca s-a schimbat ceva. */
+  function setNote(id, text) {
+    var e = findEntry(id), note = L.cleanNote(text);
+    if (!e || (e.note || '') === note) return false;
+    if (note) e.note = note; else delete e.note;
+    /* Ce a ajuns deja pe server, sau e chiar acum pe drum, primeste schimbarea separat; restul pleaca odata cu activitatea. */
+    if (BACKEND && (e.sync !== 1 || inflight[id])) {
+      data.outbox.note = data.outbox.note.filter(function (op) { return op.id !== id; });
+      data.outbox.note.push({ id: id, note: note || null });
+    }
+    persist();
+    queueSync();
+    return true;
+  }
+
+  function submitNote() {
+    var el = byId('note-input'), back = noteForm.back, id = noteForm.id;
+    var text = L.cleanNote(el ? el.value : noteForm.value);
+    var changed = setNote(id, text);
+    noteForm = { id: null, value: '', back: 'azi' };
+    navigate(back, true);
+    if (changed) toast(tr(text ? 'detailsSaved' : 'detailsRemoved'));
   }
 
   function onClick(ev) {
@@ -1284,6 +1422,13 @@
       syncAdd();
     } else if (act === 'pub') {
       add.pub = b.getAttribute('data-v') === '1';
+      render();
+    } else if (act === 'note-open') {
+      add.noteOpen = true;
+      render();
+      focusEnd('act-note');
+    } else if (act === 'post-note') {
+      openNotes[id] = !openNotes[id];
       render();
     } else if (act === 'entry') {
       askEntry(id);
@@ -1364,6 +1509,13 @@
     if (!el) return;
     if (el.id === 'auth-email') { authForm.email = el.value; return; }
     if (el.id === 'name-input') { nameForm.value = el.value; return; }
+    if (el.id === 'act-note' || el.id === 'note-input') {
+      if (el.id === 'act-note') add.note = el.value; else noteForm.value = el.value;
+      var left = byId(el.id + '-n');
+      if (left) left.textContent = el.value.length + '/' + L.NOTE_MAX;
+      grow(el);
+      return;
+    }
     if (el.id !== 'act-name') return;
     add.name = el.value;
     if (add.favId) {
@@ -1377,10 +1529,11 @@
 
   function onSubmit(ev) {
     var id = ev.target && ev.target.id;
-    if (id !== 'add-form' && id !== 'auth-form' && id !== 'name-form') return;
+    if (id !== 'add-form' && id !== 'auth-form' && id !== 'name-form' && id !== 'note-form') return;
     ev.preventDefault();
     if (id === 'add-form') saveAdd();
     else if (id === 'auth-form') submitAuth();
+    else if (id === 'note-form') submitNote();
     else submitName();
   }
 
@@ -1437,11 +1590,17 @@
       closeDialog();
       if (fn) fn();
     });
+    byId('dlg-link').addEventListener('click', function () {
+      var fn = dlgLink;
+      closeDialog();
+      if (fn) fn();
+    });
     byId('dlg-cancel').addEventListener('click', closeDialog);
     dlg.addEventListener('click', function (ev) { if (ev.target === dlg) closeDialog(); });
     dlg.addEventListener('close', function () {
       dlgOk = null;
       dlgExtra = null;
+      dlgLink = null;
       if (dlgOpener && document.contains(dlgOpener)) dlgOpener.focus();
       dlgOpener = null;
     });

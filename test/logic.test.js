@@ -55,4 +55,25 @@ assert.strictEqual(L.clampPts('x'), 1);
 assert.strictEqual(L.clampPts(7.6), 8);
 assert.strictEqual(L.clampPts(-3), 1);
 
+// detaliile unei activitati
+assert.strictEqual(L.NOTE_MAX, 300);
+assert.strictEqual(L.cleanNote('  Am ajutat un vecin.  '), 'Am ajutat un vecin.');
+assert.strictEqual(L.cleanNote('unu\r\ndoi\rtrei'), 'unu\ndoi\ntrei', 'sfarsiturile de rand devin toate la fel');
+assert.strictEqual(L.cleanNote('a\n\n\n\n\nb'), 'a\n\nb', 'cel mult un rand gol intre paragrafe');
+assert.strictEqual(L.cleanNote('\n\n a \n\n'), 'a');
+assert.strictEqual(L.cleanNote('a\tb\u0001c\u0000d'), 'a b c d', 'semnele de control devin spatii');
+assert.strictEqual(L.cleanNote(''), '');
+assert.strictEqual(L.cleanNote(' \n \n'), '');
+assert.strictEqual(L.cleanNote(null), '');
+assert.strictEqual(L.cleanNote(undefined), '');
+assert.strictEqual(L.cleanNote(12), '12');
+assert.strictEqual(L.cleanNote('ș'.repeat(400)), 'ș'.repeat(300), 'taiat la 300 de caractere');
+assert.strictEqual(L.cleanNote('ab '.repeat(200)).length, 299, 'dupa taiere nu ramane spatiu la capat');
+assert.strictEqual(Array.from(L.cleanNote('😀'.repeat(400))).length, 300, 'un emoji se numara o singura data, ca in baza de date');
+assert.strictEqual(L.cleanNote('😀'.repeat(400)), '😀'.repeat(300), 'si nu este taiat in doua');
+assert.strictEqual(L.cleanNote('a\uD83Db'), 'ab', 'o jumatate de caracter ramasa singura este scoasa');
+assert.strictEqual(L.cleanNote('a\uDE00b'), 'ab');
+assert.strictEqual(L.cleanNote('Țigară și cafea, în oraș'), 'Țigară și cafea, în oraș', 'diacriticele raman');
+assert.strictEqual(L.cleanNote(L.cleanNote('  x \n\n\n y  ')), 'x \n\n y', 'curatarea de doua ori da acelasi rezultat');
+
 console.log('logic: toate verificarile au trecut');

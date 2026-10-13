@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Porneste un PostgreSQL local, gol, pregatit ca un proiect Supabase, si incarca supabase/schema.sql.
 # Folosire: test/db/start.sh [director-de-lucru]     Oprire: test/db/start.sh stop [director-de-lucru]
+# SCOR_SCHEMA_FILE=test/db/schema-0.2.sql incarca in loc scriptul unei versiuni mai vechi, pentru testele de trecere.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+SCHEMA="${SCOR_SCHEMA_FILE:-$ROOT/supabase/schema.sql}"
 BIN="${PGBIN:-/usr/lib/postgresql/16/bin}"
 PORT="${SCOR_PG_PORT:-54329}"
 
@@ -30,7 +32,7 @@ if [ "${SCOR_STRICT:-0}" = "1" ]; then
           alter default privileges in schema public revoke all on sequences from anon, authenticated, service_role;
           alter default privileges revoke execute on functions from public;"
 fi
-run -f "$ROOT/supabase/schema.sql"
+run -f "$SCHEMA"
 # A doua rulare trebuie sa treaca la fel: scriptul poate fi lipit din nou fara sa strice ceva.
-run -f "$ROOT/supabase/schema.sql"
+run -f "$SCHEMA"
 echo "baza locala porneste pe portul $PORT"

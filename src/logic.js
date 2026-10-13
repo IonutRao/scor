@@ -58,9 +58,23 @@ var L = (function () {
     return Math.max(1, Math.min(20, n));
   }
 
+  /* Detaliile unei activitati, aduse la forma in care se pastreaza: randuri curate, cel mult NOTE_MAX caractere.
+     Aceeasi regula ca functia note_text din supabase/schema.sql. */
+  var NOTE_MAX = 300;
+  function trimNote(s) { return s.replace(/^[ \n]+|[ \n]+$/g, ''); }
+  function cleanNote(s) {
+    s = String(s == null ? '' : s)
+      .replace(/([\uD800-\uDBFF][\uDC00-\uDFFF])|[\uD800-\uDFFF]/g, '$1') /* jumatati de caracter ramase singure */
+      .replace(/\r\n?/g, '\n')
+      .replace(/[\u0000-\u0009\u000B-\u001F\u007F]/g, ' ')
+      .replace(/\n{3,}/g, '\n\n');
+    return trimNote(Array.from(trimNote(s)).slice(0, NOTE_MAX).join(''));
+  }
+
   return {
     pad: pad, dayKey: dayKey, parseDay: parseDay, addDays: addDays, signed: signed, totals: totals,
-    currentStreak: currentStreak, bestStreak: bestStreak, lastDays: lastDays, fmt: fmt, clampPts: clampPts
+    currentStreak: currentStreak, bestStreak: bestStreak, lastDays: lastDays, fmt: fmt, clampPts: clampPts,
+    NOTE_MAX: NOTE_MAX, cleanNote: cleanNote
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = L;

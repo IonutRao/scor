@@ -177,6 +177,70 @@ select t.ok(public.sync()->'favs' = 'null'::jsonb, 'Bogdan nu primeste favoritel
 select t.ok((select count(*) from public.settings) = 0, 'Bogdan nu poate citi setarile Anei');
 select t.ok((select count(*) from public.profiles) = 3, 'numele celor trei utilizatori sunt vizibile intre ei');
 
+-- ---------------------------------------------------------------- detalii
+select t.be(t.a());
+select t.ok((public.sync()->>'v')::int = 3, 'raspunsul lui sync() poarta versiunea scriptului');
+select t.ok(
+  public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(70), 'day', current_date, 'ts', t.ms(now() - interval '5 minutes'), 'type', 'plus', 'pts', 10, 'name', 'Ajutor', 'pub', true,
+                       'note', E'  Am ajutat un vecin.\r\n\r\n\r\n\r\nA durat o ora.\t \x01 '),
+    jsonb_build_object('id', t.e(71), 'day', current_date, 'ts', t.ms(now() - interval '4 minutes'), 'type', 'minus', 'pts', 5, 'name', 'Secret', 'pub', false, 'note', 'doar pentru mine'),
+    jsonb_build_object('id', t.e(72), 'day', current_date, 'ts', t.ms(now() - interval '3 minutes'), 'type', 'plus', 'pts', 5, 'name', 'Lung', 'pub', false, 'note', repeat('ș', 400)),
+    jsonb_build_object('id', t.e(73), 'day', current_date, 'ts', t.ms(now() - interval '2 minutes'), 'type', 'plus', 'pts', 5, 'name', 'Gol', 'pub', false, 'note', E' \n '),
+    jsonb_build_object('id', t.e(74), 'day', current_date, 'ts', t.ms(now() - interval '1 minute'), 'type', 'plus', 'pts', 5, 'name', 'Numar', 'pub', false, 'note', 12)
+  ))->'entries' @> jsonb_build_array(
+    jsonb_build_object('id', t.e(70), 'note', E'Am ajutat un vecin.\n\nA durat o ora.'),
+    jsonb_build_object('id', t.e(71), 'note', 'doar pentru mine'),
+    jsonb_build_object('id', t.e(72), 'note', repeat('ș', 300)),
+    jsonb_build_object('id', t.e(73), 'note', null),
+    jsonb_build_object('id', t.e(74), 'note', '12')),
+  'detaliile se salveaza curatate: randuri ordonate, cel mult 300 de caractere, gol inseamna fara');
+select t.ok(public.sync()->'rejected' = '[]'::jsonb and (select count(*) from public.entries where id in (t.e(70), t.e(71), t.e(72), t.e(73), t.e(74))) = 5,
+  'nicio activitate nu este respinsa din cauza detaliilor');
+
+select t.be(t.b());
+select t.ok(public.feed()->0->>'note' = E'Am ajutat un vecin.\n\nA durat o ora.', 'Bogdan vede in flux detaliile activitatii publice');
+select t.ok(not (public.feed()::text ~ 'doar pentru mine'), 'fluxul nu contine detaliile unei activitati private');
+select t.ok((select count(*) from public.entries where note = 'doar pentru mine') = 0, 'Bogdan nu poate citi detaliile private nici direct din tabela');
+select t.ok(public.sync(p_note => jsonb_build_array(jsonb_build_object('id', t.e(70), 'note', 'scris de Bogdan'), jsonb_build_object('id', t.e(71), 'note', null))) is not null,
+  'sync() cu detalii pentru activitatile Anei nu da eroare');
+update public.entries set note = 'scris direct de Bogdan' where id in (t.e(70), t.e(71));
+reset role;
+select t.ok((select note from public.entries where id = t.e(70)) = E'Am ajutat un vecin.\n\nA durat o ora.' and (select note from public.entries where id = t.e(71)) = 'doar pentru mine',
+  'detaliile Anei au ramas neschimbate dupa incercarile lui Bogdan');
+
+select t.be(t.a());
+select t.ok(
+  public.sync(p_note => jsonb_build_array(
+    jsonb_build_object('id', t.e(70), 'note', E' Am ajutat un vecin sa mute o canapea. \n'),
+    jsonb_build_object('id', t.e(71), 'note', null),
+    jsonb_build_object('id', t.e(72), 'note', ''),
+    jsonb_build_object('id', t.e(74), 'note', 99),
+    jsonb_build_object('id', t.e(74)),
+    'gunoi', jsonb_build_object('id', 'x', 'note', 'fara id bun')
+  ))->'entries' @> jsonb_build_array(
+    jsonb_build_object('id', t.e(70), 'note', 'Am ajutat un vecin sa mute o canapea.'),
+    jsonb_build_object('id', t.e(71), 'note', null),
+    jsonb_build_object('id', t.e(72), 'note', null),
+    jsonb_build_object('id', t.e(74), 'note', '12')),
+  'Ana schimba si sterge detalii; valorile gresite sunt ignorate');
+select t.ok(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(70), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Ajutor', 'pub', true, 'note', 'retrimisa')
+  ))->'entries' @> jsonb_build_array(jsonb_build_object('id', t.e(70), 'note', 'Am ajutat un vecin sa mute o canapea.')),
+  'o activitate retrimisa nu isi pierde detaliile schimbate intre timp');
+select t.fails($$update public.entries set note = repeat('x', 301) where id = t.e(70)$$, '23514', 'detalii prea lungi, scrise direct, sunt refuzate');
+select t.fails($$update public.entries set note = E'cu semn\x02ascuns' where id = t.e(70)$$, '23514', 'detalii cu semne de control sunt refuzate');
+select t.fails($$update public.entries set note = ' cu spatiu la inceput' where id = t.e(70)$$, '23514', 'detalii necuratate sunt refuzate');
+select t.fails($$update public.entries set note = '' where id = t.e(70)$$, '23514', 'detalii goale sunt refuzate: fara detalii inseamna null');
+select t.fails($$update public.entries set name = 'Altceva' where id = t.e(70)$$, '42501', 'numele unei activitati tot nu poate fi schimbat');
+select t.ok(public.note_text(E'a\n\n\n\nb') = E'a\n\nb', 'functia de curatare poate fi folosita si de aplicatie');
+select t.be(t.b());
+select t.ok(public.feed()->0->>'note' = 'Am ajutat un vecin sa mute o canapea.', 'fluxul arata detaliile schimbate');
+select t.be(t.a());
+select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(70), t.e(71), t.e(72), t.e(73), t.e(74)))->'entries') = 4, 'activitatile cu detalii se sterg ca oricare altele');
+select t.be_anon();
+select t.fails($$select public.note_text('x')$$, '42501', 'neautentificat: nu poate apela nici functia de curatare');
+
 -- ---------------------------------------------------------------- stergerea contului
 select t.be(t.a());
 select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(1), 'pub', true)))->'entries' @> jsonb_build_array(jsonb_build_object('id', t.e(1), 'cheers', 1)), 'incurajarea lui Carmen a ramas pe activitatea Anei');
