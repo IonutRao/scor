@@ -1,7 +1,7 @@
 {
   "name": "Scorul zilei",
   "short_name": "Scor",
-  "description": "Tine scorul zilei tale: faptele bune pe plus, cele mai putin bune pe minus.",
+  "description": "Ține scorul zilei tale: faptele bune pe plus, cele mai puțin bune pe minus.",
   "lang": "ro",
   "dir": "ltr",
   "id": "./",

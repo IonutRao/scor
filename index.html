@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Scorul zilei</title>
-<meta name="description" content="Tine scorul zilei tale: faptele bune pe plus, cele mai putin bune pe minus.">
+<meta name="description" content="Ține scorul zilei tale: faptele bune pe plus, cele mai puțin bune pe minus.">
 <meta name="theme-color" content="#F5F5FA">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -286,7 +286,7 @@ button.row:active { opacity: .6; }
 <div class="app" id="app">
   <main class="view" id="view"></main>
 </div>
-<nav class="nav" id="nav" aria-label="Sectiuni"></nav>
+<nav class="nav" id="nav" aria-label="Secțiuni"></nav>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog class="dlg" id="dlg" aria-labelledby="dlg-t">
   <div class="dlg-in">
@@ -299,7 +299,7 @@ button.row:active { opacity: .6; }
     </div>
   </div>
 </dialog>
-<noscript><p style="padding: 24px 16px">Aplicatia are nevoie de JavaScript. This app needs JavaScript.</p></noscript>
+<noscript><p style="padding: 24px 16px">Aplicația are nevoie de JavaScript. This app needs JavaScript.</p></noscript>
 <script>
 window.SCOR_BUILD = {"pwa": true, "backend": {"url": "https://xhpciapgpvfbhoyijznk.supabase.co", "key": "sb_publishable_yD9sdjz3vFS_cNa-3Ji-5Q_SPmLtaVb", "lib": "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.97.0"}};
 /* Scorul zilei: reguli de calcul, fara interfata. Aceleasi functii vor fi folosite si cand datele vin de pe server. */
@@ -368,6 +368,152 @@ var L = (function () {
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = L;
+
+/* Scorul zilei: toate textele aplicației, pe limbi. O limbă nouă înseamnă un bloc nou aici.
+   Româna se scrie cu diacritice, cu ș și ț cu virgulă dedesubt. */
+var T = {
+  ro: {
+    sections: 'Secțiuni', today: 'Azi', todayShort: 'Azi', journal: 'Jurnal', profile: 'Profil', feed: 'Flux',
+    pointsToday: 'puncte azi', streakLabel: 'serie pe plus', days7: 'pe 7 zile', bestLabel: 'record',
+    day: ['zi', 'zile'], activity: ['activitate', 'activități'], minute: ['minut', 'minute'], hour: ['oră', 'ore'],
+    cheerForms: ['încurajare', 'încurajări'], changeForms: ['modificare', 'modificări'],
+    addGood: 'Faptă bună', addBad: 'Mai puțin bună',
+    todayList: 'Activitățile de azi', emptyToday: 'Nimic notat azi.', emptyTodayHint: 'Începe cu o faptă bună.',
+    newActivity: 'Activitate nouă', close: 'Închide', typeLabel: 'Felul activității',
+    favorites: 'Favorite', noFavs: 'Nicio favorită aici. Scrie o activitate mai jos.',
+    orWrite: 'Sau scrie una nouă', writeOne: 'Scrie activitatea', namePh: 'De exemplu: 20 de flotări',
+    points: 'Puncte', pointsRange: 'între 1 și 20', less: 'Scade un punct', more: 'Adaugă un punct',
+    keepFav: 'Păstrează în favorite', save: 'Salvează', nameMissing: 'Scrie un nume sau alege din favorite.',
+    who: 'Cine vede', onlyYou: 'doar tu', inFeed: 'apare în flux, cu numele tău', priv: 'Privat', pub: 'Public',
+    privateL: 'privat', publicL: 'public',
+    last7: 'ultimele 7 zile', streakOf: 'serie de {x}', noStreak: 'nicio serie încă', chartAria: 'Scorul pe ultimele 7 zile',
+    byDay: 'Pe zile', emptyJournal: 'Jurnalul e gol.', emptyJournalHint: 'Activitățile notate apar aici, pe zile.',
+    allPlus: 'toate pe plus', allMinus: 'toate pe minus', mix: '{p} pe plus, {m} pe minus', onePlus: 'pe plus', oneMinus: 'pe minus',
+    del: 'Șterge', cancel: 'Renunță', deleted: 'Activitate ștearsă',
+    makePublic: 'Arată în flux', makePrivate: 'Scoate din flux', nowPublic: 'Apare în flux', nowPrivate: 'Scoasă din flux',
+    language: 'Limbă', favsPlus: 'Favorite pe plus', favsMinus: 'Favorite pe minus',
+    removeFav: 'Scoate din favorite: {x}', favRemoved: 'Scoasă din favorite', noFavsProfile: 'Nicio favorită.',
+    yourData: 'Datele tale',
+    dataNote: 'Datele rămân doar pe acest dispozitiv. Conturile și fluxul public vin în etapa următoare.',
+    resetAll: 'Șterge toate datele', resetTitle: 'Ștergi toate datele?',
+    resetBody: 'Activitățile și favoritele tale se pierd și nu pot fi recuperate.',
+    resetOk: 'Șterge tot', resetDone: 'Datele au fost șterse', version: 'Versiunea {x}',
+    demoNote: 'Vezi date de exemplu.', demoClear: 'Începe de la zero', demoCleared: 'Exemplele au fost șterse',
+    tagline: 'Ține scorul zilei tale.', tagline2: 'Faptele bune pe plus, cele mai puțin bune pe minus.',
+    signIn: 'Intră în cont', signUp: 'Cont nou', email: 'Email', password: 'Parolă', passHint: 'Cel puțin 8 caractere.',
+    createAccount: 'Creează contul', wait: 'Un moment...',
+    privacyNote: 'Activitățile tale rămân private până alegi tu să le arăți în flux.',
+    errEmail: 'Scrie o adresă de email corectă.', errPass: 'Parola trebuie să aibă cel puțin 8 caractere.',
+    errCreds: 'Email sau parolă greșită.', errExists: 'Există deja un cont cu acest email. Intră în cont.',
+    errWeak: 'Parola e prea ușor de ghicit. Alege una mai lungă.',
+    errRate: 'Prea multe încercări. Încearcă din nou peste câteva minute.',
+    errOffline: 'Nu există conexiune la internet.',
+    errConfirm: 'Contul așteaptă confirmarea prin email. Verifică mesajele primite.',
+    errSignupOff: 'Crearea de conturi este oprită momentan.', errGeneric: 'Ceva nu a mers. Încearcă din nou.',
+    errLib: 'Partea de cont nu a putut porni. Verifică internetul și încearcă din nou.',
+    confirmSent: 'Am trimis un email de confirmare. Deschide linkul din el, apoi intră în cont.',
+    chooseName: 'Alege un nume', changeName: 'Schimbă numele', nameLabel: 'Numele afișat',
+    nameHint: 'Între 3 și 20 de caractere. Cu el apari în flux la activitățile publice.',
+    nameTaken: 'Numele e deja luat. Încearcă altul.', nameInvalid: 'Numele trebuie să aibă între 3 și 20 de caractere.',
+    nameSaved: 'Numele a fost salvat', next: 'Continuă', saveName: 'Salvează numele',
+    account: 'Cont', nameRow: 'Nume', change: 'Schimbă',
+    signOut: 'Ieși din cont', signOutTitle: 'Ieși din cont?',
+    signOutPending: 'Ai modificări care nu au ajuns încă în cont ({x}). Dacă ieși acum, se pierd.', signOutOk: 'Ieși',
+    deleteAccount: 'Șterge contul', deleteTitle: 'Ștergi contul?',
+    deleteBody: 'Se șterg definitiv contul, activitățile, favoritele și încurajările tale. Nu se poate anula.',
+    accountDeleted: 'Contul a fost șters',
+    syncTitle: 'Salvare în cont', syncOk: 'Totul e salvat în cont.', syncWait: 'În așteptare: {x}.',
+    syncOffline: 'Fără internet. Modificările se trimit singure când revine conexiunea.',
+    syncProblem: 'Salvarea nu a reușit. Se reîncearcă automat.', syncNow: 'Trimite acum',
+    pendingNote: 'În așteptare: {x}. Se salvează în cont când revine internetul.',
+    feedSub: 'ce fac ceilalți', cheersGot: 'Încurajări primite de tine', cheersGotSub: 'se numără separat, nu intră în scor',
+    feedLang: 'Limba activităților', myLang: 'Limba mea', allLangs: 'Toate limbile',
+    refresh: 'Actualizează', moreFeed: 'Mai multe', loading: 'Se încarcă...',
+    feedEmpty: 'Încă nu a apărut nimic aici.', feedEmptyHint: 'Arată în flux o faptă bună și va fi prima.',
+    feedOffline: 'Fluxul are nevoie de internet.', feedError: 'Fluxul nu a putut fi încărcat.', retry: 'Încearcă din nou',
+    cheer: 'Încurajează', cheered: 'Încurajat', yours: 'activitatea ta', beFirst: 'Fii primul care încurajează',
+    cheersMine1: 'o încurajare, de la tine', cheersMine: '{x}, una de la tine', cheersNone: 'nicio încurajare încă',
+    now: 'chiar acum', ago: 'acum {x}', yesterday: 'ieri',
+    days: ['duminică', 'luni', 'marți', 'miercuri', 'joi', 'vineri', 'sâmbătă'],
+    daysShort: ['Du', 'Lu', 'Ma', 'Mi', 'Jo', 'Vi', 'Sâ'],
+    months: ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'],
+    fav: {
+      gym: 'Sală', read: 'Citit', walk: 'Mers pe jos', meditate: 'Meditație', water: 'Apă 2 litri', sleep: 'Somn la timp',
+      smoke: 'Țigară', junk: 'Fast food', alcohol: 'Alcool', phone: 'Prea mult pe telefon', late: 'Culcat târziu', sweets: 'Dulciuri'
+    }
+  },
+  en: {
+    sections: 'Sections', today: 'Today', todayShort: '', journal: 'Journal', profile: 'Profile', feed: 'Feed',
+    pointsToday: 'points today', streakLabel: 'day streak', days7: 'in 7 days', bestLabel: 'best streak',
+    day: ['day', 'days'], activity: ['activity', 'activities'], minute: ['minute', 'minutes'], hour: ['hour', 'hours'],
+    cheerForms: ['cheer', 'cheers'], changeForms: ['change', 'changes'],
+    addGood: 'Good deed', addBad: 'Not so good',
+    todayList: 'Today’s activities', emptyToday: 'Nothing logged today.', emptyTodayHint: 'Start with a good deed.',
+    newActivity: 'New activity', close: 'Close', typeLabel: 'Kind of activity',
+    favorites: 'Favorites', noFavs: 'No favorites here. Write an activity below.',
+    orWrite: 'Or write a new one', writeOne: 'Write the activity', namePh: 'For example: 20 pushups',
+    points: 'Points', pointsRange: 'from 1 to 20', less: 'One point less', more: 'One point more',
+    keepFav: 'Keep in favorites', save: 'Save', nameMissing: 'Write a name or pick a favorite.',
+    who: 'Who sees it', onlyYou: 'only you', inFeed: 'shown in the feed with your name', priv: 'Private', pub: 'Public',
+    privateL: 'private', publicL: 'public',
+    last7: 'last 7 days', streakOf: 'streak: {x}', noStreak: 'no streak yet', chartAria: 'Score for the last 7 days',
+    byDay: 'By day', emptyJournal: 'The journal is empty.', emptyJournalHint: 'Logged activities show up here, day by day.',
+    allPlus: 'all plus', allMinus: 'all minus', mix: '{p} plus, {m} minus', onePlus: 'plus', oneMinus: 'minus',
+    del: 'Delete', cancel: 'Cancel', deleted: 'Activity deleted',
+    makePublic: 'Show in feed', makePrivate: 'Remove from feed', nowPublic: 'Shown in the feed', nowPrivate: 'Removed from the feed',
+    language: 'Language', favsPlus: 'Plus favorites', favsMinus: 'Minus favorites',
+    removeFav: 'Remove from favorites: {x}', favRemoved: 'Removed from favorites', noFavsProfile: 'No favorites.',
+    yourData: 'Your data',
+    dataNote: 'Your data stays on this device only. Accounts and the public feed come in the next stage.',
+    resetAll: 'Delete all data', resetTitle: 'Delete all data?',
+    resetBody: 'Your activities and favorites will be lost and cannot be recovered.',
+    resetOk: 'Delete everything', resetDone: 'Data deleted', version: 'Version {x}',
+    demoNote: 'You are viewing example data.', demoClear: 'Start from zero', demoCleared: 'Examples deleted',
+    tagline: 'Keep score of your day.', tagline2: 'Good deeds add points, the not so good ones take them away.',
+    signIn: 'Sign in', signUp: 'New account', email: 'Email', password: 'Password', passHint: 'At least 8 characters.',
+    createAccount: 'Create account', wait: 'One moment...',
+    privacyNote: 'Your activities stay private until you choose to show them in the feed.',
+    errEmail: 'Enter a valid email address.', errPass: 'The password needs at least 8 characters.',
+    errCreds: 'Wrong email or password.', errExists: 'An account with this email already exists. Sign in instead.',
+    errWeak: 'That password is too easy to guess. Pick a longer one.',
+    errRate: 'Too many attempts. Try again in a few minutes.',
+    errOffline: 'No internet connection.',
+    errConfirm: 'This account is waiting for email confirmation. Check your inbox.',
+    errSignupOff: 'Creating accounts is turned off for now.', errGeneric: 'Something went wrong. Try again.',
+    errLib: 'The account part could not start. Check your connection and try again.',
+    confirmSent: 'We sent a confirmation email. Open the link in it, then sign in.',
+    chooseName: 'Choose a name', changeName: 'Change name', nameLabel: 'Display name',
+    nameHint: 'Between 3 and 20 characters. It appears in the feed next to your public activities.',
+    nameTaken: 'That name is taken. Try another.', nameInvalid: 'The name needs between 3 and 20 characters.',
+    nameSaved: 'Name saved', next: 'Continue', saveName: 'Save name',
+    account: 'Account', nameRow: 'Name', change: 'Change',
+    signOut: 'Sign out', signOutTitle: 'Sign out?',
+    signOutPending: 'Some changes have not reached your account yet ({x}). If you sign out now, they are lost.', signOutOk: 'Sign out',
+    deleteAccount: 'Delete account', deleteTitle: 'Delete your account?',
+    deleteBody: 'Your account, activities, favorites and cheers are deleted for good. This cannot be undone.',
+    accountDeleted: 'Account deleted',
+    syncTitle: 'Saving to your account', syncOk: 'Everything is saved to your account.', syncWait: 'Waiting: {x}.',
+    syncOffline: 'No internet. Changes are sent on their own once the connection is back.',
+    syncProblem: 'Saving failed. It will retry automatically.', syncNow: 'Send now',
+    pendingNote: 'Waiting: {x}. Sending resumes once the internet is back.',
+    feedSub: 'what others are doing', cheersGot: 'Cheers you received', cheersGotSub: 'counted separately, not part of your score',
+    feedLang: 'Activity language', myLang: 'My language', allLangs: 'All languages',
+    refresh: 'Refresh', moreFeed: 'More', loading: 'Loading...',
+    feedEmpty: 'Nothing here yet.', feedEmptyHint: 'Show a good deed in the feed and it will be the first.',
+    feedOffline: 'The feed needs an internet connection.', feedError: 'The feed could not be loaded.', retry: 'Try again',
+    cheer: 'Cheer', cheered: 'Cheered', yours: 'your activity', beFirst: 'Be the first to cheer',
+    cheersMine1: '1 cheer, from you', cheersMine: '{x}, one from you', cheersNone: 'no cheers yet',
+    now: 'just now', ago: '{x} ago', yesterday: 'yesterday',
+    days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    daysShort: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
+    months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    fav: {
+      gym: 'Gym', read: 'Reading', walk: 'Walk', meditate: 'Meditation', water: '2 l of water', sleep: 'Sleep on time',
+      smoke: 'Cigarette', junk: 'Fast food', alcohol: 'Alcohol', phone: 'Too much phone', late: 'Late to bed', sweets: 'Sweets'
+    }
+  }
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = T;
 
 /* Scorul zilei: legatura cu serverul (Supabase). Tot ce vorbeste cu reteaua trece pe aici.
    Fara adresa si cheie in configuratie, aplicatia ramane in modul local si acest fisier nu face nimic. */
@@ -476,7 +622,7 @@ var API = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.2';
+  var VERSION = '0.2.1';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -485,149 +631,7 @@ var API = (function () {
   var FLAME = 'M12 2.6c1 4.5 6.25 7 6.25 13.1a6.25 6.25 0 0 1-12.5 0c0-2.4 1-4.2 2.4-5.6.2 1.7 1.1 2.9 2.2 3.4C9.7 9.7 10.6 5.8 12 2.6z';
   var STAR = 'M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z';
 
-  /* Toate textele aplicatiei, pe limbi. O limba noua inseamna un bloc nou aici. */
-  var T = {
-    ro: {
-      sections: 'Sectiuni', today: 'Azi', todayShort: 'Azi', journal: 'Jurnal', profile: 'Profil', feed: 'Flux',
-      pointsToday: 'puncte azi', streakLabel: 'serie pe plus', days7: 'pe 7 zile', bestLabel: 'record', cheersLabel: 'incurajari',
-      day: ['zi', 'zile'], activity: ['activitate', 'activitati'], minute: ['minut', 'minute'], hour: ['ora', 'ore'],
-      cheerForms: ['incurajare', 'incurajari'], changeForms: ['modificare', 'modificari'],
-      addGood: 'Fapta buna', addBad: 'Mai putin buna',
-      todayList: 'Activitatile de azi', emptyToday: 'Nimic notat azi.', emptyTodayHint: 'Incepe cu o fapta buna.',
-      newActivity: 'Activitate noua', close: 'Inchide', typeLabel: 'Felul activitatii',
-      favorites: 'Favorite', noFavs: 'Nicio favorita aici. Scrie o activitate mai jos.',
-      orWrite: 'Sau scrie una noua', writeOne: 'Scrie activitatea', namePh: 'De exemplu: 20 de flotari',
-      points: 'Puncte', pointsRange: 'intre 1 si 20', less: 'Scade un punct', more: 'Adauga un punct',
-      keepFav: 'Pastreaza in favorite', save: 'Salveaza', nameMissing: 'Scrie un nume sau alege din favorite.',
-      who: 'Cine vede', onlyYou: 'doar tu', inFeed: 'apare in flux, cu numele tau', priv: 'Privat', pub: 'Public',
-      privateL: 'privat', publicL: 'public',
-      last7: 'ultimele 7 zile', streakOf: 'serie de {x}', noStreak: 'nicio serie inca', chartAria: 'Scorul pe ultimele 7 zile',
-      byDay: 'Pe zile', emptyJournal: 'Jurnalul e gol.', emptyJournalHint: 'Activitatile notate apar aici, pe zile.',
-      allPlus: 'toate pe plus', allMinus: 'toate pe minus', mix: '{p} pe plus, {m} pe minus',
-      del: 'Sterge', cancel: 'Renunta', deleted: 'Activitate stearsa',
-      makePublic: 'Arata in flux', makePrivate: 'Scoate din flux', nowPublic: 'Apare in flux', nowPrivate: 'Scoasa din flux',
-      language: 'Limba', favsPlus: 'Favorite pe plus', favsMinus: 'Favorite pe minus',
-      removeFav: 'Scoate din favorite: {x}', favRemoved: 'Scoasa din favorite', noFavsProfile: 'Nicio favorita.',
-      yourData: 'Datele tale',
-      dataNote: 'Datele raman doar pe acest dispozitiv. Conturile si fluxul public vin in etapa urmatoare.',
-      resetAll: 'Sterge toate datele', resetTitle: 'Stergi toate datele?',
-      resetBody: 'Activitatile si favoritele tale se pierd si nu pot fi recuperate.',
-      resetOk: 'Sterge tot', resetDone: 'Datele au fost sterse', version: 'Versiunea {x}',
-      demoNote: 'Vezi date de exemplu.', demoClear: 'Incepe de la zero', demoCleared: 'Exemplele au fost sterse',
-      tagline: 'Tine scorul zilei tale.', tagline2: 'Faptele bune pe plus, cele mai putin bune pe minus.',
-      signIn: 'Intra in cont', signUp: 'Cont nou', email: 'Email', password: 'Parola', passHint: 'Cel putin 8 caractere.',
-      createAccount: 'Creeaza contul', wait: 'Un moment...',
-      privacyNote: 'Activitatile tale raman private pana alegi tu sa le arati in flux.',
-      errEmail: 'Scrie o adresa de email corecta.', errPass: 'Parola trebuie sa aiba cel putin 8 caractere.',
-      errCreds: 'Email sau parola gresita.', errExists: 'Exista deja un cont cu acest email. Intra in cont.',
-      errWeak: 'Parola e prea usor de ghicit. Alege una mai lunga.',
-      errRate: 'Prea multe incercari. Incearca din nou peste cateva minute.',
-      errOffline: 'Nu exista conexiune la internet.',
-      errConfirm: 'Contul asteapta confirmarea prin email. Verifica mesajele primite.',
-      errSignupOff: 'Crearea de conturi este oprita momentan.', errGeneric: 'Ceva nu a mers. Incearca din nou.',
-      errLib: 'Partea de cont nu a putut porni. Verifica internetul si incearca din nou.',
-      confirmSent: 'Am trimis un email de confirmare. Deschide linkul din el, apoi intra in cont.',
-      chooseName: 'Alege un nume', changeName: 'Schimba numele', nameLabel: 'Numele afisat',
-      nameHint: 'Intre 3 si 20 de caractere. Cu el apari in flux la activitatile publice.',
-      nameTaken: 'Numele e deja luat. Incearca altul.', nameInvalid: 'Numele trebuie sa aiba intre 3 si 20 de caractere.',
-      nameSaved: 'Numele a fost salvat', next: 'Continua', saveName: 'Salveaza numele',
-      account: 'Cont', nameRow: 'Nume', change: 'Schimba',
-      signOut: 'Iesi din cont', signOutTitle: 'Iesi din cont?',
-      signOutPending: 'Ai modificari care nu au ajuns inca in cont ({x}). Daca iesi acum, se pierd.', signOutOk: 'Iesi',
-      deleteAccount: 'Sterge contul', deleteTitle: 'Stergi contul?',
-      deleteBody: 'Se sterg definitiv contul, activitatile, favoritele si incurajarile tale. Nu se poate anula.',
-      accountDeleted: 'Contul a fost sters',
-      syncTitle: 'Salvare in cont', syncOk: 'Totul e salvat in cont.', syncWait: 'In asteptare: {x}.',
-      syncOffline: 'Fara internet. Modificarile se trimit singure cand revine conexiunea.',
-      syncProblem: 'Salvarea nu a reusit. Se reincearca automat.', syncNow: 'Trimite acum',
-      pendingNote: 'In asteptare: {x}. Se trimit cand revine internetul.',
-      feedSub: 'ce fac ceilalti', cheersGot: 'Incurajari primite de tine', cheersGotSub: 'se numara separat, nu intra in scor',
-      feedLang: 'Limba activitatilor', myLang: 'Limba mea', allLangs: 'Toate limbile',
-      refresh: 'Actualizeaza', moreFeed: 'Mai multe', loading: 'Se incarca...',
-      feedEmpty: 'Inca nu a aparut nimic aici.', feedEmptyHint: 'Arata in flux o fapta buna si va fi prima.',
-      feedOffline: 'Fluxul are nevoie de internet.', feedError: 'Fluxul nu a putut fi incarcat.', retry: 'Incearca din nou',
-      cheer: 'Incurajeaza', cheered: 'Incurajat', yours: 'activitatea ta', beFirst: 'Fii primul care incurajeaza',
-      cheersMine1: 'o incurajare, de la tine', cheersMine: '{x}, una de la tine', cheersNone: 'nicio incurajare inca',
-      now: 'chiar acum', ago: 'acum {x}', yesterday: 'ieri',
-      days: ['duminica', 'luni', 'marti', 'miercuri', 'joi', 'vineri', 'sambata'],
-      daysShort: ['Du', 'Lu', 'Ma', 'Mi', 'Jo', 'Vi', 'Sa'],
-      months: ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'],
-      fav: {
-        gym: 'Sala', read: 'Citit', walk: 'Mers pe jos', meditate: 'Meditatie', water: 'Apa 2 litri', sleep: 'Somn la timp',
-        smoke: 'Tigara', junk: 'Fast food', alcohol: 'Alcool', phone: 'Prea mult pe telefon', late: 'Culcat tarziu', sweets: 'Dulciuri'
-      }
-    },
-    en: {
-      sections: 'Sections', today: 'Today', todayShort: '', journal: 'Journal', profile: 'Profile', feed: 'Feed',
-      pointsToday: 'points today', streakLabel: 'day streak', days7: 'in 7 days', bestLabel: 'best streak', cheersLabel: 'cheers',
-      day: ['day', 'days'], activity: ['activity', 'activities'], minute: ['minute', 'minutes'], hour: ['hour', 'hours'],
-      cheerForms: ['cheer', 'cheers'], changeForms: ['change', 'changes'],
-      addGood: 'Good deed', addBad: 'Not so good',
-      todayList: 'Today’s activities', emptyToday: 'Nothing logged today.', emptyTodayHint: 'Start with a good deed.',
-      newActivity: 'New activity', close: 'Close', typeLabel: 'Kind of activity',
-      favorites: 'Favorites', noFavs: 'No favorites here. Write an activity below.',
-      orWrite: 'Or write a new one', writeOne: 'Write the activity', namePh: 'For example: 20 pushups',
-      points: 'Points', pointsRange: 'from 1 to 20', less: 'One point less', more: 'One point more',
-      keepFav: 'Keep in favorites', save: 'Save', nameMissing: 'Write a name or pick a favorite.',
-      who: 'Who sees it', onlyYou: 'only you', inFeed: 'shown in the feed with your name', priv: 'Private', pub: 'Public',
-      privateL: 'private', publicL: 'public',
-      last7: 'last 7 days', streakOf: 'streak: {x}', noStreak: 'no streak yet', chartAria: 'Score for the last 7 days',
-      byDay: 'By day', emptyJournal: 'The journal is empty.', emptyJournalHint: 'Logged activities show up here, day by day.',
-      allPlus: 'all plus', allMinus: 'all minus', mix: '{p} plus, {m} minus',
-      del: 'Delete', cancel: 'Cancel', deleted: 'Activity deleted',
-      makePublic: 'Show in feed', makePrivate: 'Remove from feed', nowPublic: 'Shown in the feed', nowPrivate: 'Removed from the feed',
-      language: 'Language', favsPlus: 'Plus favorites', favsMinus: 'Minus favorites',
-      removeFav: 'Remove from favorites: {x}', favRemoved: 'Removed from favorites', noFavsProfile: 'No favorites.',
-      yourData: 'Your data',
-      dataNote: 'Your data stays on this device only. Accounts and the public feed come in the next stage.',
-      resetAll: 'Delete all data', resetTitle: 'Delete all data?',
-      resetBody: 'Your activities and favorites will be lost and cannot be recovered.',
-      resetOk: 'Delete everything', resetDone: 'Data deleted', version: 'Version {x}',
-      demoNote: 'You are viewing example data.', demoClear: 'Start from zero', demoCleared: 'Examples deleted',
-      tagline: 'Keep score of your day.', tagline2: 'Good deeds add points, the not so good ones take them away.',
-      signIn: 'Sign in', signUp: 'New account', email: 'Email', password: 'Password', passHint: 'At least 8 characters.',
-      createAccount: 'Create account', wait: 'One moment...',
-      privacyNote: 'Your activities stay private until you choose to show them in the feed.',
-      errEmail: 'Enter a valid email address.', errPass: 'The password needs at least 8 characters.',
-      errCreds: 'Wrong email or password.', errExists: 'An account with this email already exists. Sign in instead.',
-      errWeak: 'That password is too easy to guess. Pick a longer one.',
-      errRate: 'Too many attempts. Try again in a few minutes.',
-      errOffline: 'No internet connection.',
-      errConfirm: 'This account is waiting for email confirmation. Check your inbox.',
-      errSignupOff: 'Creating accounts is turned off for now.', errGeneric: 'Something went wrong. Try again.',
-      errLib: 'The account part could not start. Check your connection and try again.',
-      confirmSent: 'We sent a confirmation email. Open the link in it, then sign in.',
-      chooseName: 'Choose a name', changeName: 'Change name', nameLabel: 'Display name',
-      nameHint: 'Between 3 and 20 characters. It appears in the feed next to your public activities.',
-      nameTaken: 'That name is taken. Try another.', nameInvalid: 'The name needs between 3 and 20 characters.',
-      nameSaved: 'Name saved', next: 'Continue', saveName: 'Save name',
-      account: 'Account', nameRow: 'Name', change: 'Change',
-      signOut: 'Sign out', signOutTitle: 'Sign out?',
-      signOutPending: 'Some changes have not reached your account yet ({x}). If you sign out now, they are lost.', signOutOk: 'Sign out',
-      deleteAccount: 'Delete account', deleteTitle: 'Delete your account?',
-      deleteBody: 'Your account, activities, favorites and cheers are deleted for good. This cannot be undone.',
-      accountDeleted: 'Account deleted',
-      syncTitle: 'Saving to your account', syncOk: 'Everything is saved to your account.', syncWait: 'Waiting: {x}.',
-      syncOffline: 'No internet. Changes are sent on their own once the connection is back.',
-      syncProblem: 'Saving failed. It will retry automatically.', syncNow: 'Send now',
-      pendingNote: 'Waiting: {x}. They are sent once the internet is back.',
-      feedSub: 'what others are doing', cheersGot: 'Cheers you received', cheersGotSub: 'counted separately, not part of your score',
-      feedLang: 'Activity language', myLang: 'My language', allLangs: 'All languages',
-      refresh: 'Refresh', moreFeed: 'More', loading: 'Loading...',
-      feedEmpty: 'Nothing here yet.', feedEmptyHint: 'Show a good deed in the feed and it will be the first.',
-      feedOffline: 'The feed needs an internet connection.', feedError: 'The feed could not be loaded.', retry: 'Try again',
-      cheer: 'Cheer', cheered: 'Cheered', yours: 'your activity', beFirst: 'Be the first to cheer',
-      cheersMine1: '1 cheer, from you', cheersMine: '{x}, one from you', cheersNone: 'no cheers yet',
-      now: 'just now', ago: '{x} ago', yesterday: 'yesterday',
-      days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
-      daysShort: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'],
-      months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
-      fav: {
-        gym: 'Gym', read: 'Reading', walk: 'Walk', meditate: 'Meditation', water: '2 l of water', sleep: 'Sleep on time',
-        smoke: 'Cigarette', junk: 'Fast food', alcohol: 'Alcohol', phone: 'Too much phone', late: 'Late to bed', sweets: 'Sweets'
-      }
-    }
-  };
+  /* Textele aplicatiei, pe limbi, stau in src/i18n.js (variabila T). */
 
   /* Sugestiile cu care porneste un utilizator nou: cheie, fel, puncte. */
   var DEFAULT_FAVS = [
@@ -687,6 +691,12 @@ var API = (function () {
   function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
   function timeOf(ts) { var d = new Date(ts); return L.pad(d.getHours()) + ':' + L.pad(d.getMinutes()); }
   function longDate(d) { return tr('days')[d.getDay()] + ', ' + d.getDate() + ' ' + tr('months')[d.getMonth()]; }
+
+  /* Acelasi nume, oricum ar fi scris: "sala" si "Sală" sunt aceeasi activitate. */
+  function fold(s) {
+    s = String(s).trim().toLowerCase();
+    return s.normalize ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : s;
+  }
 
   function dayTitle(k, today) {
     var d = L.parseDay(k);
@@ -1217,9 +1227,9 @@ var API = (function () {
     var total = t[today] || 0;
     var list = data.entries.filter(function (e) { return e.day === today; }).sort(function (a, b) { return b.ts - a.ts; });
     var week = L.lastDays(today, 7).reduce(function (s, k) { return s + (t[k] || 0); }, 0);
-    var streak = L.currentStreak(t, today), best = L.bestStreak(t);
+    var streak = L.currentStreak(t, today), best = L.bestStreak(t), got = myCheers();
     var third = BACKEND
-      ? '<div class="stat"><div class="stat-num" id="cheers">' + ICON.star + myCheers() + '</div><div class="stat-label">' + esc(tr('cheersLabel')) + '</div></div>'
+      ? '<div class="stat"><div class="stat-num" id="cheers">' + ICON.star + got + '</div><div class="stat-label">' + esc(tr('cheerForms')[got === 1 ? 0 : 1]) + '</div></div>'
       : '<div class="stat"><div class="stat-num" id="best">' + esc(count(best, tr('day'))) + '</div><div class="stat-label">' + esc(tr('bestLabel')) + '</div></div>';
     return '' +
       '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('today')) + '</h1><p class="head-sub">' + esc(longDate(now)) + '</p></header>' +
@@ -1245,9 +1255,9 @@ var API = (function () {
   }
 
   function keepVisible() {
-    var name = add.name.trim().toLowerCase();
+    var name = fold(add.name);
     if (!name || add.favId) return false;
-    return !data.favs.some(function (f) { return f.type === add.type && favName(f).toLowerCase() === name; });
+    return !data.favs.some(function (f) { return f.type === add.type && fold(favName(f)) === name; });
   }
 
   function saveLabel() { return tr('save') + ' ' + L.fmt(add.type === 'minus' ? -add.pts : add.pts); }
@@ -1294,7 +1304,10 @@ var API = (function () {
       '</div>';
   }
 
-  function mixText(p, m) { return m === 0 ? tr('allPlus') : p === 0 ? tr('allMinus') : tr('mix', { p: p, m: m }); }
+  function mixText(p, m) {
+    if (p + m === 1) return tr(p ? 'onePlus' : 'oneMinus');
+    return m === 0 ? tr('allPlus') : p === 0 ? tr('allMinus') : tr('mix', { p: p, m: m });
+  }
   function barH(v, max) { return v === 0 ? 6 : Math.max(8, Math.round(Math.abs(v) / max * 120)); }
 
   function viewJournal() {
@@ -1408,7 +1421,7 @@ var API = (function () {
   }
 
   function langButtons() {
-    return '<button type="button" class="seg-b" aria-pressed="' + (lang === 'ro') + '" data-act="lang" data-lang="ro" data-focus="lang-ro">Romana</button>' +
+    return '<button type="button" class="seg-b" aria-pressed="' + (lang === 'ro') + '" data-act="lang" data-lang="ro" data-focus="lang-ro">Română</button>' +
       '<button type="button" class="seg-b" aria-pressed="' + (lang === 'en') + '" data-act="lang" data-lang="en" data-focus="lang-en">English</button>';
   }
 
@@ -1448,7 +1461,7 @@ var API = (function () {
 
   function brand() {
     return '<header class="head head-add"><h1 id="title" tabindex="-1">Scorul zilei</h1>' +
-      '<div class="langs" role="group" aria-label="Limba / Language">' +
+      '<div class="langs" role="group" aria-label="Limbă / Language">' +
         '<button type="button" aria-pressed="' + (lang === 'ro') + '" data-act="lang" data-lang="ro" data-focus="lang-ro">RO</button>' +
         '<button type="button" aria-pressed="' + (lang === 'en') + '" data-act="lang" data-lang="en" data-focus="lang-en">EN</button>' +
       '</div></header>' +

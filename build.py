@@ -16,8 +16,9 @@ SRC = ROOT / "src"
 SITE = ROOT
 ART = ROOT / "artifact"
 TEST = ROOT / "test"
-VERSION = "0.2"
+VERSION = "0.2.1"
 TITLE = "Scorul zilei"
+DESCRIPTION = "Ține scorul zilei tale: faptele bune pe plus, cele mai puțin bune pe minus."
 INK = (30, 27, 75)
 MINT = (61, 220, 151)
 
@@ -27,7 +28,7 @@ def read(name):
 
 
 css = read("app.css") + "\n" + read("social.css")
-js = read("logic.js") + "\n" + read("api.js") + "\n" + read("app.js")
+js = "\n".join(read(n) for n in ("logic.js", "i18n.js", "api.js", "app.js"))
 body = read("body.html")
 config = json.loads(read("config.json"))
 
@@ -124,7 +125,7 @@ def page(cfg):
         '<meta charset="utf-8">',
         '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
         f"<title>{TITLE}</title>",
-        '<meta name="description" content="Tine scorul zilei tale: faptele bune pe plus, cele mai putin bune pe minus.">',
+        f'<meta name="description" content="{DESCRIPTION}">',
         '<meta name="theme-color" content="#F5F5FA">',
         '<meta name="mobile-web-app-capable" content="yes">',
         '<meta name="apple-mobile-web-app-capable" content="yes">',
@@ -155,7 +156,7 @@ def main():
 
     manifest = {
         "name": TITLE, "short_name": "Scor",
-        "description": "Tine scorul zilei tale: faptele bune pe plus, cele mai putin bune pe minus.",
+        "description": DESCRIPTION,
         "lang": "ro", "dir": "ltr", "id": "./", "start_url": "./", "scope": "./",
         "display": "standalone", "orientation": "portrait",
         "background_color": "#F5F5FA", "theme_color": "#F5F5FA",

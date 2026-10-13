@@ -1,18 +1,18 @@
 # Scorul zilei (working name)
 
-Motivational web app. People log good deeds (plus points) and less good ones (minus points), see a daily score, a streak and a journal. The owner is not a developer; Claude writes and ships all the code. Reply to the owner in plain language, without jargon.
+Motivational web app. People log good deeds (plus points) and less good ones (minus points), see a daily score, a streak and a journal. The owner is not a developer; Claude writes and ships all the code. Reply to the owner in plain language, without jargon, one step at a time: one short message, one thing for him to do, then wait.
 
 ## Layout
 
-- `src/` is the source of truth: `app.css`, `logic.js` (pure scoring rules, also loaded by the node test), `app.js` (UI, routing, storage, all strings), `body.html`.
+- `src/` is the source of truth: `app.css`, `logic.js` (pure scoring rules, also loaded by the node test), `i18n.js` (every UI string, Romanian and English, also loaded by a node test), `app.js` (UI, routing, storage), `body.html`. `build.py` concatenates the scripts in the order `logic.js`, `i18n.js`, `api.js`, `app.js`.
 - `build.py` assembles `src/` into the files GitHub Pages serves from the repo root (`index.html`, `sw.js`, `manifest.webmanifest`, icons) and into `artifact/scorul-zilei.html`, a preview page with example data that is not committed.
 - Never edit the built files at the root by hand. Edit `src/`, run the build, commit sources and built files together.
-- `test/logic.test.js` runs under node. `test/flow.py` walks the built app with Playwright on a phone-size screen, including an offline start through the service worker.
+- `test/logic.test.js` and `test/i18n.test.js` run under node. `test/flow.py` walks the built app with Playwright on a phone-size screen, including an offline start through the service worker.
 
 ## Commands
 
 - Build: `python3 build.py`
-- Tests: `TZ=Europe/Bucharest node test/logic.test.js` then `python3 test/flow.py`
+- Tests: `TZ=Europe/Bucharest node test/logic.test.js`, `node test/i18n.test.js`, then `python3 test/flow.py`
 - The Playwright script launches `/opt/pw-browsers/chromium`. Google Fonts cannot load in the sandbox; the test ignores those failures only.
 
 ## Deploy
@@ -27,7 +27,9 @@ Motivational web app. People log good deeds (plus points) and less good ones (mi
 - Streak: consecutive days that ended above zero. Today counts only once it is above zero, otherwise the streak runs through yesterday.
 - Encouragements from other people are counted separately and never added to the score.
 - Visibility is per activity. Minus activities are private by default.
-- Romanian and English from the start. Every UI string lives in the `T` dictionary in `src/app.js`. Romanian UI text is written without diacritics for now.
+- Romanian and English from the start. Every UI string lives in the `T` dictionary in `src/i18n.js`; both languages must have the same keys, and `test/i18n.test.js` checks it.
+- Romanian text shown to people is written with diacritics, with ș and ț as comma-below letters (never the cedilla forms), and wording that agrees with the number next to it (1 încurajare, 2 încurajări). The owner's own chat preference (no diacritics, no hyphens) is about replies to him, not about the app.
+- Default favorites and the activities logged from them are stored by key (`gym`, `smoke`) and named at display time, so their names follow the language and any later text correction. Names people type are kept as typed; `fold()` in `src/app.js` compares names ignoring case and diacritics.
 - Look: Manrope, one light theme, tokens at the top of `src/app.css`: indigo ink and score cards, mint for plus, coral for minus, gold for rewards.
 - Kept deliberately small: no leaderboards and no comments in the first versions.
 
@@ -43,9 +45,12 @@ Motivational web app. People log good deeds (plus points) and less good ones (mi
 
 ### Status on 2026-10-13
 
-- 0.2 is built and passes all local tests on branch `claude/surse-si-v0.2`. It is not merged; `main` still serves 0.1.
-- Still to do, one step at a time with the owner: get the publishable key into `src/config.json`, have him run `supabase/schema.sql`, turn off "Confirm email" for the test phase, rebuild, publish to `main`, then test sign-up on the live site.
+- `main` serves 0.2.1 with accounts, against the real Supabase project. The owner ran `supabase/schema.sql` and turned off "Confirm email" for the test phase.
+- The owner created the first real account on the live site; sign-up, the name step and moving his 0.1 activities into the account worked.
+- 0.2.1 put the Romanian text on diacritics and moved the strings out of `src/app.js` into `src/i18n.js`.
+- Not yet seen working on the real project: cheers between two real accounts, account deletion, the offline queue on a phone.
 - Password reset is not built yet: Supabase's built-in email only reaches project team members, so it needs a custom SMTP service and a domain first.
+- Since 0.2, finished and tested work is pushed straight to `main`, which makes it live. The owner was told this beforehand and went along with it.
 
 ## Conventions
 
