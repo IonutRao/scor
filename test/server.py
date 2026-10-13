@@ -22,7 +22,7 @@ PORT = int(os.environ.get("SCOR_PORT", "8766"))
 PSQL = ["psql", "-X", "-q", "-t", "-A", "-h", "127.0.0.1", "-p", os.environ.get("SCOR_PG_PORT", "54329"),
         "-U", "postgres", "-d", "postgres", "-v", "ON_ERROR_STOP=1"]
 TOKENS = {}
-MODE = {"confirm": False}
+MODE = {"confirm": False, "feed": 0}
 LOCK = threading.Lock()
 SIGS = {}
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -113,8 +113,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/__test/set":
+            # confirm=1: conturile noi asteapta confirmarea prin email
+            # feed=1000: paginile deschise de acum incolo isi improspateaza fluxul la o secunda, nu la 15
             q = urllib.parse.parse_qs(url.query)
-            MODE["confirm"] = q.get("confirm", ["0"])[0] == "1"
+            if "confirm" in q:
+                MODE["confirm"] = q["confirm"][0] == "1"
+            if "feed" in q:
+                MODE["feed"] = int(q["feed"][0])
             return self.send(200, MODE)
         rel = "index.html" if url.path in ("/", "") else url.path.lstrip("/")
         target = (ROOT / rel).resolve()
@@ -123,6 +128,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         data = target.read_bytes()
         if rel == "index.html":
             cfg = {"backend": {"url": f"http://127.0.0.1:{PORT}", "key": "test-key", "lib": "/test/fake-supabase.js"}}
+            if MODE["feed"]:
+                cfg["feedEvery"] = MODE["feed"]
             text, n = re.subn(r"window\.SCOR_BUILD = \{.*?\};\n", "window.SCOR_BUILD = " + json.dumps(cfg) + ";\n", data.decode("utf-8"), count=1)
             if n != 1:
                 return self.send(500, {"message": "config line not found in index.html"})

@@ -438,6 +438,227 @@ try:
         soft(lambda: a.wait_for_selector("#feed-list, #feed-empty, #feed-loading", timeout=8000), "la redeschidere Ana ramane in cont, direct pe ecranul unde era")
         check(a.locator("#auth-btn").count() == 0, "nu i se cere din nou parola")
 
+        # ------------------------------------------------------------ fluxul se improspateaza singur
+        # Paginile deschise de aici incolo isi improspateaza fluxul la o secunda, ca verificarile sa nu astepte cate 15.
+        urllib.request.urlopen(BASE + "/__test/set?feed=1000").read()
+        ctx_a.close()
+        old = "date_trunc('milliseconds', now() - interval '3 days')"
+        # Activitatile publice de pana acum devin vechi de cateva zile: timpul afisat langa ele nu se mai schimba in timpul testului.
+        db("update public.entries e set ts = %s + interval '1 hour', day = ((%s + interval '1 hour') at time zone 'UTC')::date "
+           "from public.profiles p where p.id = e.user_id and p.name like 'Ana%%' and e.is_public" % (old, old))
+        ctx_g, g = new_page()
+        sign_up(g, "gina@example.test", "parola-gina-4", "Gina")
+        g.wait_for_selector("#score")
+        db("insert into public.entries (id, user_id, day, ts, type, pts, name, is_public, lang) "
+           "select gen_random_uuid(), p.id, ((%s - make_interval(mins => n)) at time zone 'UTC')::date, %s - make_interval(mins => n), "
+           "'plus', 5, 'Veche ' || lpad(n::text, 2, '0'), true, 'ro' from public.profiles p, generate_series(1, 60) n where p.name = 'Gina'" % (old, old))
+        db("insert into public.entries (id, user_id, day, ts, type, pts, name, is_public, lang) "
+           "select gen_random_uuid(), p.id, ((now() - interval '2 days') at time zone 'UTC')::date, date_trunc('milliseconds', now() - interval '2 days'), "
+           "'plus', 5, 'Morning walk', true, 'en' from public.profiles p where p.name = 'Gina'")
+        check(db("select count(*) from public.entries where is_public") == "62", "in baza: 62 de activitati publice, una in engleza")
+
+        ctx_f, f = new_page()
+        feed_calls = []
+        f.on("request", lambda r: feed_calls.append(time.time()) if r.url.endswith("/rest/v1/rpc/feed") else None)
+        sign_in(f, "ana@example.test", "parola-ana-1")
+        soft(lambda: f.wait_for_selector("#score", timeout=8000), "Ana intra de pe un alt dispozitiv")
+        f.wait_for_timeout(2500)
+        check(len(feed_calls) == 0, "cat timp e pe ecranul Azi, aplicatia nu cere fluxul")
+
+        f.click('#nav a[data-route="flux"]')
+        soft(lambda: wait_count(f, "#feed-list .post", 30), "fluxul se deschide cu prima pagina, 30 de activitati")
+        check("Sală" in text(f, "#feed-list .post"), "cea mai noua este prima")
+        f.evaluate("""() => {
+          window.__draws = 0; window.__loading = 0;
+          new MutationObserver(() => {
+            window.__draws++;
+            const b = document.querySelector('[data-act="feed-refresh"]');
+            if (b && b.textContent.indexOf('Se încarcă') >= 0) window.__loading++;
+          }).observe(document.getElementById('view'), { childList: true });
+        }""")
+        n0 = len(feed_calls)
+        f.wait_for_timeout(4500)
+        check(len(feed_calls) - n0 >= 2, "pe ecranul Flux, fluxul este cerut din nou, singur (%d cereri in 4,5 secunde)" % (len(feed_calls) - n0))
+        check(f.evaluate("() => window.__draws") == 0, "cat timp nu s-a schimbat nimic, ecranul nu este redesenat")
+
+        add(g, "plus", name="Înot dimineața", public=True)
+        soft(lambda: wait_text(f, "#feed-list .post", "Înot dimineața"), "o activitate publica noua a altcuiva apare singura, prima in lista")
+        check(f.evaluate("() => window.scrollY") == 0, "cu inceputul listei la vedere, pagina ramane sus")
+        check(f.evaluate("() => window.__loading") == 0, "improspatarea singura nu arata Se incarca")
+        check(f.locator("#feed-list .post").count() == 31, "celelalte activitati raman in lista")
+        check(text(f, '[data-act="feed-refresh"]') == "Actualizează", "butonul Actualizeaza ramane la locul lui")
+
+        g.click('#nav a[data-route="flux"]')
+        g.click('#feed-list .post:has-text("Sală") .cheer')
+        soft(lambda: wait_text(f, '#feed-list .post:has-text("Sală") .post-n', "1 încurajare"), "o incurajare primita apare singura la activitate")
+        soft(lambda: wait_text(f, "#cheers-got", "1"), "si in totalul de incurajari primite, in acelasi timp")
+        f.click('#nav a[data-route="azi"]')
+        check(text(f, "#cheers") == "1", "pe Azi se vede aceeasi incurajare, fara alta incarcare")
+        f.click('#nav a[data-route="flux"]')
+        f.wait_for_selector("#feed-list .post")
+
+        # O incurajare aflata pe drum: improspatarile care trec intre timp nu o sterg.
+        held = []
+        f.route("**/rest/v1/rpc/cheer", lambda r: held.append(r))
+        f.click('#feed-list .post:has-text("Înot") .cheer')
+        n1 = len(feed_calls)
+        f.wait_for_timeout(2700)
+        check(len(held) == 1 and len(feed_calls) - n1 >= 1, "incurajarea este inca pe drum, iar fluxul s-a improspatat intre timp")
+        check("Încurajat" in text(f, '#feed-list .post:has-text("Înot") .cheer'), "improspatarea nu sterge o incurajare aflata pe drum")
+        with f.expect_response("**/rest/v1/rpc/cheer"):
+            held[0].continue_()
+        f.unroute("**/rest/v1/rpc/cheer")
+        f.wait_for_timeout(300)
+        check("o încurajare, de la tine" in text(f, '#feed-list .post:has-text("Înot") .post-n'), "dupa raspunsul serverului, incurajarea ramane data")
+        check(db("select cheers_count from public.entries where name like 'Înot%'") == "1", "in baza: incurajarea a ajuns o singura data")
+
+        # Un raspuns de flux plecat inaintea unei schimbari facute aici soseste dupa ea: schimbarea ramane.
+        stale = []
+
+        def hold_first(route, bucket):
+            if bucket:
+                route.continue_()
+            else:
+                bucket.append((route, route.fetch()))
+
+        f.route("**/rest/v1/rpc/feed", lambda r: hold_first(r, stale))
+        soft(lambda: until(f, lambda: len(stale) == 1, "o cerere de flux oprita pe drum", 6000), "o cerere de flux este tinuta pe drum")
+        f.evaluate("""() => {
+          window.__back = 0;
+          new MutationObserver(() => {
+            const p = [...document.querySelectorAll('#feed-list .post')].find((x) => x.textContent.includes('Înot'));
+            if (p && p.querySelector('.cheer[aria-pressed="true"]')) window.__back++;
+          }).observe(document.getElementById('view'), { childList: true });
+        }""")
+        with f.expect_response("**/rest/v1/rpc/cheer"):
+            f.click('#feed-list .post:has-text("Înot") .cheer')
+        soft(lambda: wait_text(f, '#feed-list .post:has-text("Înot") .post-n', "Fii primul"), "Ana isi retrage incurajarea")
+        stale[0][0].fulfill(response=stale[0][1])
+        f.wait_for_timeout(1600)
+        f.unroute("**/rest/v1/rpc/feed")
+        check(f.evaluate("() => window.__back") == 0, "raspunsul vechi, sosit dupa retragere, nu readuce incurajarea pe ecran")
+        check("Încurajează" in text(f, '#feed-list .post:has-text("Înot") .cheer'), "butonul ramane pe Incurajeaza")
+        check(db("select cheers_count from public.entries where name like 'Înot%'") == "0", "in baza: incurajarea este retrasa")
+
+        g.click('#nav a[data-route="azi"]')
+        g.click('#today-list .row:has-text("Înot")')
+        g.click("#dlg-extra")
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Înot")', 0), "o activitate scoasa din flux dispare singura si la ceilalti")
+
+        # Paginile deschise cu Mai multe raman deschise.
+        for _ in range(4):
+            if f.locator('[data-act="feed-more"]').count() == 0:
+                break
+            f.click('[data-act="feed-more"]')
+            f.wait_for_timeout(600)
+        soft(lambda: wait_count(f, "#feed-list .post", 61), "cu Mai multe se vad toate cele 61 de activitati in romana")
+        f.wait_for_timeout(2800)
+        check(f.locator("#feed-list .post").count() == 61 and f.locator('[data-act="feed-more"]').count() == 0, "improspatarea singura nu strange paginile deschise")
+        check("Veche 60" in f.locator("#feed-list .post").last.inner_text(), "cea mai veche activitate a ramas la coada listei")
+
+        # Cu lista coborata, noutatile intra deasupra fara sa miste ce are omul in fata.
+        f.evaluate("() => { const p = document.querySelectorAll('#feed-list .post')[25]; window.scrollTo(0, window.scrollY + p.getBoundingClientRect().top - 10); }")
+        f.wait_for_timeout(200)
+        mark = f.evaluate("""() => {
+          const p = [...document.querySelectorAll('#feed-list .post')].find((x) => x.getBoundingClientRect().bottom > 0);
+          return [p.getAttribute('data-post'), p.getBoundingClientRect().top, window.scrollY];
+        }""")
+        add(g, "plus", name="Yoga seara", public=True)
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Yoga seara")', 1), "activitatea noua intra in lista si cand omul a coborat in ea")
+        now = f.evaluate("""(id) => {
+          const p = [...document.querySelectorAll('#feed-list .post')].find((x) => x.getAttribute('data-post') === id);
+          return [p.getBoundingClientRect().top, window.scrollY];
+        }""", mark[0])
+        check(abs(now[0] - mark[1]) <= 1.5 and now[1] > mark[2] + 40, "activitatea la care se uita ramane pe loc (%.1f, apoi %.1f; pagina a coborat cu %d)" % (mark[1], now[0], now[1] - mark[2]))
+        check(f.locator("#feed-list .post").count() == 62, "si toate paginile deschise raman, cu noutatea in plus")
+
+        # Cu aplicatia in fundal nu se cere nimic; la revenire fluxul se aduce la zi.
+        hide = "(h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }"
+        f.evaluate("() => window.scrollTo(0, 0)")
+        f.evaluate(hide, True)
+        n2 = len(feed_calls)
+        add(g, "plus", name="Stretching", public=True)
+        f.wait_for_timeout(2600)
+        check(len(feed_calls) == n2, "cu aplicatia in fundal, fluxul nu este cerut")
+        check(f.locator('#feed-list .post:has-text("Stretching")').count() == 0, "si lista ramane cum era")
+        f.evaluate(hide, False)
+        soft(lambda: wait_text(f, "#feed-list .post", "Stretching", 4000), "la revenirea in aplicatie, noutatea apare singura")
+
+        # Cand serverul nu raspunde, lista ramane, incercarile se raresc, apoi totul isi revine singur.
+        f.route("**/rest/v1/rpc/feed", lambda r: r.abort())
+        n3 = len(feed_calls)
+        f.wait_for_timeout(6000)
+        tries = len(feed_calls) - n3
+        check(1 <= tries <= 3, "cand serverul nu raspunde, incercarile se raresc (%d in 6 secunde)" % tries)
+        check(f.locator("#feed-list .post").count() == 63 and f.locator("p.note.feed").count() == 0, "lista ramane pe ecran, fara mesaj de eroare")
+        add(g, "plus", name="Plimbare", public=True)
+        f.unroute("**/rest/v1/rpc/feed")
+        soft(lambda: wait_text(f, "#feed-list .post", "Plimbare", 15000), "cand serverul raspunde din nou, fluxul isi revine singur")
+
+        # Un raspuns intarziat pentru filtrul vechi nu ajunge in lista filtrului nou.
+        late = []
+        f.route("**/rest/v1/rpc/feed", lambda r: hold_first(r, late))
+        soft(lambda: until(f, lambda: len(late) == 1, "o cerere de flux pe Limba mea oprita pe drum", 12000), "o cerere pentru Limba mea este tinuta pe drum")
+        f.click('[data-act="feed-lang"][data-all="1"]')
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Morning walk")', 1), "Toate limbile arata si activitatea in engleza")
+        f.evaluate("""() => {
+          window.__lost = 0;
+          new MutationObserver(() => {
+            const list = document.getElementById('feed-list');
+            if (list && !list.textContent.includes('Morning walk')) window.__lost++;
+          }).observe(document.getElementById('view'), { childList: true });
+        }""")
+        late[0][0].fulfill(response=late[0][1])
+        f.wait_for_timeout(1500)
+        f.unroute("**/rest/v1/rpc/feed")
+        check(f.evaluate("() => window.__lost") == 0 and f.locator('#feed-list .post:has-text("Morning walk")').count() == 1, "raspunsul intarziat pentru filtrul vechi nu strica lista noua")
+        f.click('[data-act="feed-lang"][data-all="0"]')
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Morning walk")', 0), "inapoi pe Limba mea, activitatea in engleza dispare")
+        soft(lambda: wait_text(f, "#feed-list .post", "Plimbare"), "iar lista in romana este la zi")
+
+        # Dupa o pauza lunga pot fi mai multe noutati decat incap intr-un raspuns: lista nu ramane cu un gol in ea.
+        # Val 30, ultima de pe prima pagina, are timpul pus de server, cu fractiuni de milisecunda: la Mai multe vine inca o data.
+        check(f.locator("#feed-list .post").count() == 30, "inainte de pauza sunt 30 de activitati pe ecran")
+        f.evaluate(hide, True)
+        db("insert into public.entries (id, user_id, day, ts, type, pts, name, is_public, lang) "
+           "select gen_random_uuid(), p.id, (now() at time zone 'UTC')::date, date_trunc('milliseconds', now()) - make_interval(secs => n / 1000.0) "
+           "+ case when n = 30 then interval '700 microseconds' else interval '0' end, "
+           "'plus', 5, 'Val ' || lpad(n::text, 2, '0'), true, 'ro' from public.profiles p, generate_series(1, 55) n where p.name = 'Gina'")
+        f.evaluate(hide, False)
+        soft(lambda: wait_text(f, "#feed-list .post", "Val 01"), "dupa pauza, cea mai noua activitate este prima")
+        names = f.evaluate("() => [...document.querySelectorAll('#feed-list .post-t')].map((x) => x.textContent)")
+        check(names == ["Val %02d" % n for n in range(1, 31)], "lista porneste din nou de la inceput, fara gol: %d activitati, ultima %s" % (len(names), names[-1] if names else "-"))
+        check(f.locator('[data-act="feed-more"]').count() == 1, "restul se aduce cu Mai multe")
+        f.evaluate("""() => {
+          window.__twice = 0;
+          new MutationObserver(() => {
+            const names = [...document.querySelectorAll('#feed-list .post-t')].map((x) => x.textContent);
+            if (new Set(names).size !== names.length) window.__twice++;
+          }).observe(document.getElementById('view'), { childList: true });
+        }""")
+        f.click('[data-act="feed-more"]')
+        soft(lambda: wait_text(f, "#feed-list", "Stretching"), "Mai multe continua de unde s-a oprit lista")
+        f.wait_for_timeout(1500)
+        names = f.evaluate("() => [...document.querySelectorAll('#feed-list .post-t')].map((x) => x.textContent)")
+        check(names[28:33] == ["Val 29", "Val 30", "Val 31", "Val 32", "Val 33"] and f.evaluate("() => window.__twice") == 0, "nicio activitate nu apare de doua ori, nici macar o clipa: " + ", ".join(names[28:33]))
+        check(names[53:57] == ["Val 54", "Val 55", "Plimbare", "Stretching"], "in ordine, fara nimic sarit: " + ", ".join(names[53:57]))
+
+        # Prima incarcare nereusita se reia singura, fara apasat pe Incearca din nou.
+        ctx_h, h = new_page()
+        h.route("**/rest/v1/rpc/feed", lambda r: r.abort())
+        sign_in(h, "gina@example.test", "parola-gina-4")
+        h.wait_for_selector("#score")
+        h.click('#nav a[data-route="flux"]')
+        soft(lambda: wait_text(h, ".empty.feed", "Fluxul"), "fara raspuns de la server, ecranul Flux spune ca nu s-a putut incarca")
+        check(h.locator('[data-focus="feed-retry"]').count() == 1, "si ofera Incearca din nou")
+        h.unroute("**/rest/v1/rpc/feed")
+        soft(lambda: wait_count(h, "#feed-list .post", 30, 15000), "cand serverul raspunde, fluxul se incarca singur")
+
+        urllib.request.urlopen(BASE + "/__test/set?feed=0").read()
+        ctx_f.close()
+        ctx_g.close()
+        ctx_h.close()
+
         check(not errs, "fara erori in consola: " + "; ".join(errs[:3]))
         browser.close()
 finally:

@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.2.2: fluxul se actualizează singur cât timp este deschis.
 - 0.2.1: textele în română sunt scrise cu diacritice.
 - 0.2: conturi cu email și parolă, salvare în cont, activități publice sau private, flux și încurajări.
 - 0.1: scor zilnic, favorite, serie, jurnal, română și engleză. Datele rămân pe dispozitiv.

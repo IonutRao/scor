@@ -40,15 +40,19 @@ Motivational web app. People log good deeds (plus points) and less good ones (mi
 - `src/api.js` is the only file that touches the network. It loads supabase-js from the CDN URL in `src/config.json`.
 - The app is local-first: screens render from local data, `sync()` in `src/app.js` sends pending changes and pulls the account state in one call.
 - `src/social.css` holds the styles for accounts, visibility and the feed; it is concatenated after `app.css`.
-- Tests: `test/db/start.sh` starts a local PostgreSQL shaped like a Supabase project and loads the schema; `psql -h 127.0.0.1 -p 54329 -U postgres -d postgres -f test/db/security.sql` checks the access rules (also run with `SCOR_STRICT=1`); `python3 test/accounts.py` walks the app with several users against `test/server.py`, a stand-in for Supabase that uses `test/fake-supabase.js` in place of supabase-js.
+- The feed refreshes itself while the Flux screen is open and visible (`feedTick()` in `src/app.js`, every `FEED_EVERY`, 15 seconds; slower after failed attempts; nothing while the page is hidden or offline). It is plain polling of the `feed` function, not a live connection. `refreshFeed()` merges the newest page into what is on screen: no loading text, pages opened with "Mai multe" stay open, a reader who scrolled down keeps his place, and an encouragement the user just gave or withdrew is never overwritten by an older answer. Feed requests are numbered with `feedSeq`; an answer is used only if no other feed request started after it. The "Actualizează" link stays as a manual refresh.
+- The user's own activities seen in the feed bring their encouragement counts with them (`noteMine()`); a full `sync` runs at most once a minute while Flux is open.
+- Fine for the test phase, not for many users: every open feed asks for the newest page every 15 seconds and `sync` returns the whole journal each time. Before real scale, add a cheap "anything new" call or a live connection, and make `sync` send only what changed.
+- Tests: `test/db/start.sh` starts a local PostgreSQL shaped like a Supabase project and loads the schema; `psql -h 127.0.0.1 -p 54329 -U postgres -d postgres -f test/db/security.sql` checks the access rules (also run with `SCOR_STRICT=1`); `python3 test/accounts.py` walks the app with several users against `test/server.py`, a stand-in for Supabase that uses `test/fake-supabase.js` in place of supabase-js. It takes about a minute and a half.
+- `test/server.py` answers `/__test/set?feed=1000`: pages opened afterwards refresh the feed every second (`feedEvery` in the injected config) so the automatic refresh can be tested without waiting 15 seconds each time. The published build never sets `feedEvery`.
 - The sandbox cannot reach Supabase, npm or CDNs, so the real supabase-js and the real project are never exercised here. The first run against the real project has to be checked by the owner on the live site.
 
 ### Status on 2026-10-13
 
-- `main` serves 0.2.1 with accounts, against the real Supabase project. The owner ran `supabase/schema.sql` and turned off "Confirm email" for the test phase.
-- The owner created the first real account on the live site; sign-up, the name step and moving his 0.1 activities into the account worked.
-- 0.2.1 put the Romanian text on diacritics and moved the strings out of `src/app.js` into `src/i18n.js`.
-- Not yet seen working on the real project: cheers between two real accounts, account deletion, the offline queue on a phone.
+- `main` serves 0.2.2 with accounts, against the real Supabase project. The owner ran `supabase/schema.sql` and turned off "Confirm email" for the test phase.
+- Seen working on the real project, from the owner's screenshots: sign-up, the name step, moving his 0.1 activities into the account, public activities in the feed, encouragements received from a second account.
+- 0.2.1 put the Romanian text on diacritics and moved the strings out of `src/app.js` into `src/i18n.js`. 0.2.2 made the feed refresh on its own.
+- Not yet seen working on the real project: account deletion, the offline queue on a phone.
 - Password reset is not built yet: Supabase's built-in email only reaches project team members, so it needs a custom SMTP service and a domain first.
 - Since 0.2, finished and tested work is pushed straight to `main`, which makes it live. The owner was told this beforehand and went along with it.
 

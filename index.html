@@ -622,12 +622,16 @@ var API = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.2.1';
+  var VERSION = '0.2.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
   var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'nume'] : ['plus', 'minus']);
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
+     si la cat timp se improspateaza singur cat e pe ecran. */
+  var FEED_PAGE = 30, FEED_MAX = 50;
+  var FEED_EVERY = Math.max(500, Number(CFG.feedEvery) || 15000);
   var FLAME = 'M12 2.6c1 4.5 6.25 7 6.25 13.1a6.25 6.25 0 0 1-12.5 0c0-2.4 1-4.2 2.4-5.6.2 1.7 1.1 2.9 2.2 3.4C9.7 9.7 10.6 5.8 12 2.6z';
   var STAR = 'M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z';
 
@@ -655,6 +659,9 @@ var API = (function () {
   var add = { type: 'plus', favId: null, name: '', pts: 10, keep: false, pub: false };
   var authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
   var nameForm = { value: '', busy: false, error: '' };
+  /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
+     shownFeed tine minte ce flux este desenat acum, ca improspatarea sa nu redeseneze degeaba. */
+  var feedSeq = 0, shownFeed = '';
   var feed = newFeed();
   var openDays = {};
   var appEl, viewEl, navEl, toastEl, dlg;
@@ -724,7 +731,10 @@ var API = (function () {
   function tone(n) { return n > 0 ? 'pos' : n < 0 ? 'neg' : ''; }
   function kind(n) { return n > 0 ? 'plus' : n < 0 ? 'minus' : ''; }
   function isAddRoute(r) { return r === 'plus' || r === 'minus'; }
-  function newFeed() { return { items: [], loading: false, ready: false, error: '', all: false, done: true, at: 0 }; }
+  function newFeed() {
+    feedSeq++;
+    return { items: [], loading: false, quiet: false, started: 0, ready: false, error: '', all: false, done: true, at: 0, tried: 0, fails: 0 };
+  }
 
   function uuid() {
     var b = new Uint8Array(16), h = [], i;
@@ -880,7 +890,7 @@ var API = (function () {
       /* Ce tocmai a plecat poate schimba fluxul: se reincarca acum sau la urmatoarea deschidere. */
       if (batch.length || sent.del.length || sent.vis.length) {
         feed.at = 0;
-        if (route === 'flux') loadFeed(true);
+        if (route === 'flux') openFeed();
       }
     }, function (err) {
       syncFailed(err);
@@ -888,7 +898,7 @@ var API = (function () {
       syncing = false;
       inflight = {};
       if (auth === 'in') {
-        render();
+        if (route === 'flux') showFeed(); else render();
         if (syncErr) queueSync(Math.min(300000, 15000 * Math.pow(2, Math.min(syncFails, 5))));
         else if (syncAgain || pendingCount() > 0) queueSync(300);
       } else {
@@ -1147,30 +1157,154 @@ var API = (function () {
 
   /* ---------- flux ---------- */
 
+  /* O cerere de flux este pe drum. Una ramasa fara raspuns mai mult de jumatate de minut nu mai tine locul ocupat. */
+  function feedBusy() { return (feed.loading || feed.quiet) && Date.now() - feed.started < 30000; }
+
+  /* Aduce fluxul la vedere: de la capat (reset) sau pagina urmatoare, mai veche. */
   function loadFeed(reset) {
-    if (feed.loading) return;
+    if (feed.loading && feedBusy()) return;
+    var seq = ++feedSeq, sent = Date.now();
     feed.loading = true;
-    if (reset) feed.error = '';
-    var before = !reset && feed.items.length ? feed.items[feed.items.length - 1].ts : null;
-    API.rpc('feed', { p_lang: feed.all ? null : lang, p_before: before, p_limit: 30 }).then(function (rows) {
+    feed.quiet = false;
+    feed.started = sent;
+    if (reset) { feed.error = ''; feed.tried = sent; }
+    var before = !reset && feed.items.length ? Number(feed.items[feed.items.length - 1].ts) : null;
+    API.rpc('feed', { p_lang: feed.all ? null : lang, p_before: before, p_limit: FEED_PAGE }).then(function (rows) {
+      if (seq !== feedSeq) return;
       rows = Array.isArray(rows) ? rows : [];
-      feed.items = reset ? rows : feed.items.concat(rows);
-      feed.done = rows.length < 30;
+      if (reset) {
+        applyHead(rows, FEED_PAGE, sent, false);
+        feed.at = Date.now();
+        feed.fails = 0;
+      } else {
+        var have = {};
+        feed.items.forEach(function (it) { have[it.id] = true; });
+        rows.forEach(function (r) { if (!have[r.id]) feed.items.push(r); });
+        feed.done = rows.length < FEED_PAGE;
+      }
       feed.error = '';
       feed.ready = true;
-      feed.at = Date.now();
+      noteMine(rows);
     }, function (err) {
+      if (seq !== feedSeq) return;
       feed.error = err.offline ? 'offline' : 'error';
+      if (reset) feed.fails++;
     }).then(function () {
+      if (seq !== feedSeq) return;
       feed.loading = false;
       if (route === 'flux' && auth === 'in') render();
     });
     if (route === 'flux') render();
   }
 
+  /* Improspatare in liniste: aduce inceputul fluxului si il aseaza peste ce este pe ecran,
+     fara "Se incarca" si fara sa stranga paginile deja deschise. Daca nu reuseste, lista ramane cum era. */
+  function refreshFeed() {
+    if (!feed.ready || feedBusy()) return;
+    var seq = ++feedSeq, sent = Date.now();
+    var limit = Math.min(FEED_MAX, Math.max(FEED_PAGE, feed.items.length));
+    feed.loading = false;
+    feed.quiet = true;
+    feed.started = sent;
+    feed.tried = sent;
+    API.rpc('feed', { p_lang: feed.all ? null : lang, p_before: null, p_limit: limit }).then(function (rows) {
+      if (seq !== feedSeq) return;
+      feed.quiet = false;
+      if (!Array.isArray(rows)) { feed.fails++; return; }
+      applyHead(rows, limit, sent, true);
+      feed.at = Date.now();
+      feed.fails = 0;
+      feed.error = '';
+      noteMine(rows);
+      showFeed();
+    }, function () {
+      if (seq !== feedSeq) return;
+      feed.quiet = false;
+      feed.fails++;
+    });
+  }
+
+  /* Aseaza inceputul proaspat al fluxului peste lista de pe ecran. O activitate ramasa isi pastreaza obiectul,
+     iar o incurajare data dupa plecarea cererii nu este calcata de raspunsul ei, care e mai vechi.
+     tail: pastreaza si activitatile mai vechi decat ce a venit, adica paginile deschise cu "Mai multe".
+     Se pastreaza doar daca raspunsul coboara pana la lista veche; dupa o pauza lunga, cu mai multe noutati decat incap
+     intr-un raspuns, intre ele ar ramane un gol, asa ca lista porneste din nou de la inceput. */
+  function applyHead(rows, limit, sent, tail) {
+    var old = {}, seen = {}, out = [];
+    var top = feed.items.length ? Number(feed.items[0].ts) : 0;
+    var floor = rows.length ? Number(rows[rows.length - 1].ts) : 0;
+    feed.items.forEach(function (it) { old[it.id] = it; });
+    rows.forEach(function (r) {
+      var o = old[r.id];
+      seen[r.id] = true;
+      if (!o) { out.push(r); return; }
+      var local = o.busy || (o.touched && o.touched >= sent), cheers = o.cheers, cheered = o.cheered;
+      for (var k in r) o[k] = r[k];
+      if (local) { o.cheers = cheers; o.cheered = cheered; }
+      out.push(o);
+    });
+    if (tail && rows.length >= limit && floor <= top) {
+      feed.items.forEach(function (it) { if (!seen[it.id] && Number(it.ts) < floor) out.push(it); });
+    } else {
+      feed.done = rows.length < limit;
+    }
+    feed.items = out;
+  }
+
+  /* Activitatile mele vazute in flux aduc cu ele numarul de incurajari la zi, fara un drum in plus pana la cont. */
+  function noteMine(rows) {
+    var changed = false;
+    rows.forEach(function (r) {
+      if (!r.mine) return;
+      var e = findEntry(r.id);
+      if (e && (e.cheers || 0) !== (r.cheers || 0)) { e.cheers = r.cheers || 0; changed = true; }
+    });
+    if (changed) persist();
+  }
+
+  /* Redeseneaza fluxul doar daca s-a schimbat ceva la vedere. Daca omul a coborat in lista,
+     activitatea la care se uita ramane pe loc; cu inceputul listei la vedere, noutatile intra pe ecran. */
+  function showFeed() {
+    if (route !== 'flux' || auth !== 'in') return;
+    if (viewFeed() === shownFeed) return;
+    var marks = [], posts = viewEl.querySelectorAll('.post'), i, box;
+    for (i = 0; i < posts.length && marks.length < 6; i++) {
+      box = posts[i].getBoundingClientRect();
+      if (box.bottom <= 0) continue;
+      if (i === 0 && box.top >= 0) break;
+      marks.push([posts[i].getAttribute('data-post'), box.top]);
+    }
+    render();
+    if (!marks.length) return;
+    var now = {};
+    posts = viewEl.querySelectorAll('.post');
+    for (i = 0; i < posts.length; i++) now[posts[i].getAttribute('data-post')] = posts[i];
+    for (i = 0; i < marks.length; i++) {
+      if (!now[marks[i][0]]) continue;
+      window.scrollBy(0, now[marks[i][0]].getBoundingClientRect().top - marks[i][1]);
+      break;
+    }
+  }
+
+  /* La intrarea pe ecranul Flux: prima data se incarca la vedere, apoi doar se improspateaza. */
   function openFeed() {
-    if (!feed.ready || Date.now() - feed.at > 30000) loadFeed(true);
+    if (!feed.ready) loadFeed(true);
+    else if (Date.now() - feed.at > 4000) refreshFeed();
     if (Date.now() - data.lastSync > 30000) queueSync(0);
+  }
+
+  /* Cat timp ecranul Flux este deschis si la vedere, se improspateaza singur. Dupa incercari nereusite asteapta tot mai mult. */
+  function feedTick() {
+    if (auth !== 'in' || route !== 'flux' || document.hidden || navigator.onLine === false) return;
+    var now = Date.now(), wait = FEED_EVERY * Math.min(8, Math.pow(2, feed.fails));
+    if (!feed.ready) {
+      /* Prima incarcare: daca nu a pornit inca porneste acum, iar daca nu a reusit se mai incearca singura. */
+      if (!feed.loading && (!feed.error || now - feed.tried >= wait)) loadFeed(true);
+      return;
+    }
+    if (now - Math.max(feed.at, feed.tried) >= wait) refreshFeed();
+    /* Incurajarile primite la activitati care nu mai sunt in flux vin cu starea contului, mai rar. */
+    if (!syncErr && !syncing && now - data.lastSync > 60000) queueSync(0);
   }
 
   function toggleCheer(id) {
@@ -1181,6 +1315,7 @@ var API = (function () {
     it.cheered = on;
     it.cheers = Math.max(0, (it.cheers || 0) + (on ? 1 : -1));
     it.busy = true;
+    it.touched = Date.now();
     render();
     API.rpc('cheer', { p_entry: id, p_on: on }).then(function (r) {
       if (r) { it.cheers = r.cheers || 0; it.cheered = !!r.cheered; }
@@ -1190,6 +1325,7 @@ var API = (function () {
       toast(tr(err.offline ? 'errOffline' : 'errGeneric'));
     }).then(function () {
       it.busy = false;
+      it.touched = Date.now();
       if (route === 'flux' && auth === 'in') render();
     });
   }
@@ -1382,7 +1518,7 @@ var API = (function () {
     } else {
       body = '<ul class="feed" id="feed-list">' + feed.items.map(function (it) {
         var sign = it.type === 'minus' ? -it.pts : it.pts;
-        return '<li class="post">' +
+        return '<li class="post" data-post="' + esc(it.id) + '">' +
           '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b> · ' + esc(ago(Number(it.ts))) + '</span>' +
             '<span class="pill ' + (it.type === 'minus' ? 'minus' : 'plus') + '">' + L.fmt(sign) + '</span></div>' +
           '<div class="post-t">' + esc(postTitle(it)) + '</div>' +
@@ -1548,6 +1684,7 @@ var API = (function () {
     else if (route === 'nume') html = viewName(false);
     else html = viewToday();
     appEl.classList.toggle('is-add', full);
+    shownFeed = !gate && route === 'flux' ? html : '';
     viewEl.innerHTML = html;
     renderNav(full);
     if (fid) {
@@ -1824,9 +1961,10 @@ var API = (function () {
       syncFails = 0;
       sync();
     } else if (act === 'feed-lang') {
-      feed.all = b.getAttribute('data-all') === '1';
-      feed.ready = false;
-      feed.items = [];
+      var all = b.getAttribute('data-all') === '1';
+      if (all === feed.all && feed.ready) return;
+      feed = newFeed();
+      feed.all = all;
       loadFeed(true);
     } else if (act === 'feed-refresh') {
       loadFeed(true);
@@ -1885,16 +2023,21 @@ var API = (function () {
     document.addEventListener('submit', onSubmit);
     window.addEventListener('popstate', onHistory);
     window.addEventListener('hashchange', onHistory);
-    window.addEventListener('online', function () { syncFails = 0; queueSync(200); });
+    window.addEventListener('online', function () {
+      syncFails = 0;
+      queueSync(200);
+      if (BACKEND && auth === 'in' && route === 'flux') { feed.fails = 0; openFeed(); }
+    });
     /* La revenirea in aplicatie se recalculeaza ziua curenta si se aduc noutatile din cont. */
     document.addEventListener('visibilitychange', function () {
       if (document.hidden || (BACKEND && auth !== 'in')) return;
       render();
       if (BACKEND) {
         if (pendingCount() > 0 || Date.now() - data.lastSync > 60000) queueSync(200);
-        if (route === 'flux') openFeed();
+        if (route === 'flux') { feed.fails = 0; openFeed(); }
       }
     });
+    if (BACKEND) setInterval(feedTick, Math.min(1000, Math.max(250, Math.round(FEED_EVERY / 3))));
     /* Aplicatia lasata deschisa peste miezul noptii trece singura la ziua noua. */
     setInterval(function () {
       if (BACKEND && auth !== 'in') return;
