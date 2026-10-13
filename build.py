@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Asambleaza aplicatia din src/ in doua forme:
+   radacina repo   fisierele servite de GitHub Pages: index.html, manifest, service worker, iconite
+   artifact/       aceeasi aplicatie ca pagina de previzualizare, cu date de exemplu (nu se urca in repo)
+
+   Rulare: python3 build.py
+"""
+import json
+import pathlib
+
+from PIL import Image, ImageDraw
+
+ROOT = pathlib.Path(__file__).resolve().parent
+SRC = ROOT / "src"
+SITE = ROOT
+ART = ROOT / "artifact"
+TEST = ROOT / "test"
+VERSION = "0.1"
+TITLE = "Scorul zilei"
+INK = (30, 27, 75)
+MINT = (61, 220, 151)
+
+css = (SRC / "app.css").read_text(encoding="utf-8")
+logic = (SRC / "logic.js").read_text(encoding="utf-8")
+app = (SRC / "app.js").read_text(encoding="utf-8")
+body = (SRC / "body.html").read_text(encoding="utf-8")
+
+FONT = '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">'
+# Aceleasi reguli de baza pe care le pune si pagina de previzualizare, ca aplicatia sa arate identic in ambele locuri.
+RESET = (":root{color-scheme:light;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}"
+         "body{margin:0}img{max-width:100%}[hidden]{display:none!important}")
+
+
+def script(cfg):
+    return "<script>\nwindow.SCOR_BUILD = " + json.dumps(cfg) + ";\n" + logic + "\n" + app + "</script>\n"
+
+
+def icon(size, scale=1.0):
+    s = size * 4
+    im = Image.new("RGB", (s, s), INK)
+    d = ImageDraw.Draw(im)
+    length, thick, c = s * 0.46 * scale, s * 0.13 * scale, s / 2
+    d.rounded_rectangle([c - length / 2, c - thick / 2, c + length / 2, c + thick / 2], radius=thick / 2, fill=MINT)
+    d.rounded_rectangle([c - thick / 2, c - length / 2, c + thick / 2, c + length / 2], radius=thick / 2, fill=MINT)
+    return im.resize((size, size), Image.LANCZOS)
+
+
+def main():
+    for d in (SITE, ART, TEST):
+        d.mkdir(parents=True, exist_ok=True)
+
+    site_html = "\n".join([
+        "<!doctype html>",
+        '<html lang="ro">',
+        "<head>",
+        '<meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">',
+        f"<title>{TITLE}</title>",
+        '<meta name="description" content="Tine scorul zilei tale: faptele bune pe plus, cele mai putin bune pe minus.">',
+        '<meta name="theme-color" content="#F5F5FA">',
+        '<meta name="mobile-web-app-capable" content="yes">',
+        '<meta name="apple-mobile-web-app-capable" content="yes">',
+        '<meta name="apple-mobile-web-app-title" content="Scor">',
+        '<link rel="manifest" href="manifest.webmanifest">',
+        '<link rel="icon" href="favicon.svg" type="image/svg+xml">',
+        '<link rel="apple-touch-icon" href="apple-touch-icon.png">',
+        '<link rel="preconnect" href="https://fonts.googleapis.com">',
+        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+        FONT,
+        "<style>",
+        RESET,
+        css + "</style>",
+        "</head>",
+        "<body>",
+        body + script({"pwa": True}) + "</body>",
+        "</html>",
+        "",
+    ])
+    (SITE / "index.html").write_text(site_html, encoding="utf-8")
+
+    manifest = {
+        "name": TITLE, "short_name": "Scor",
+        "description": "Tine scorul zilei tale: faptele bune pe plus, cele mai putin bune pe minus.",
+        "lang": "ro", "dir": "ltr", "id": "./", "start_url": "./", "scope": "./",
+        "display": "standalone", "orientation": "portrait",
+        "background_color": "#F5F5FA", "theme_color": "#F5F5FA",
+        "icons": [
+            {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+            {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+    }
+    (SITE / "manifest.webmanifest").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+    sw = """/* Scorul zilei: face aplicatia sa porneasca si fara internet. */
+const CACHE = 'scor-__VERSION__';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg', './icon-192.png', './icon-512.png'];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+
+  /* Pagina: intai de pe internet, ca actualizarile sa ajunga imediat; fara internet, din copia salvata. */
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok && res.type === 'basic' && !res.redirected) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  /* Iconite si fonturi: din copia salvata, altfel de pe internet si se pastreaza. */
+  const fonts = url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com';
+  if (url.origin === self.location.origin || fonts) {
+    event.respondWith(
+      caches.match(req).then((hit) => hit || fetch(req).then((res) => {
+        if (res.ok || res.type === 'opaque') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        }
+        return res;
+      }))
+    );
+  }
+});
+""".replace("__VERSION__", VERSION)
+    (SITE / "sw.js").write_text(sw, encoding="utf-8")
+
+    (SITE / "favicon.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1E1B4B"/>'
+        '<path d="M32 18v28M18 32h28" stroke="#3DDC97" stroke-width="8" stroke-linecap="round"/></svg>\n', encoding="utf-8")
+    icon(192).save(SITE / "icon-192.png")
+    icon(512).save(SITE / "icon-512.png")
+    icon(512, 0.78).save(SITE / "icon-maskable-512.png")
+    icon(180).save(SITE / "apple-touch-icon.png")
+
+    # Pagina de previzualizare: fara doctype, head sau body, cu titlul si stilul la inceput.
+    art_html = f"<title>{TITLE}</title>\n{FONT}\n<style>\n{css}</style>\n{body}{script({'demo': True, 'lang': 'ro'})}"
+    (ART / "scorul-zilei.html").write_text(art_html, encoding="utf-8")
+
+    # Aceeasi pagina invelita ca la publicare, doar pentru testele locale.
+    shell = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+             "<style>" + RESET + "body{font:14px system-ui,sans-serif}</style></head><body>")
+    (TEST / "artifact-preview.html").write_text(shell + art_html + "</body></html>", encoding="utf-8")
+
+    names = ["index.html", "manifest.webmanifest", "sw.js", "favicon.svg",
+             "icon-192.png", "icon-512.png", "icon-maskable-512.png", "apple-touch-icon.png"]
+    for n in names:
+        print(f"{n:28s} {(SITE / n).stat().st_size:>8d} B")
+    print(f"{'artifact/scorul-zilei.html':28s} {(ART / 'scorul-zilei.html').stat().st_size:>8d} B")
+
+
+if __name__ == "__main__":
+    main()

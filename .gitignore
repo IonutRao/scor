@@ -1,0 +1,7 @@
+artifact/
+test/shots/
+test/_all.js
+test/artifact-preview.html
+__pycache__/
+*.pyc
+.DS_Store
