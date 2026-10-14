@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.4';
+  var VERSION = '0.4.1';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -53,8 +53,11 @@
   /* Pozele aduse pentru afisare in sesiunea aceasta: cheie -> { state: 'loading' | 'ok' | 'error', url }.
      Cand se aduna mai mult de SHOTS_MAX, cele mai vechi care nu sunt pe ecran se elibereaza. */
   var shots = {}, SHOTS_MAX = 40;
-  /* Formularul pentru care omul alege acum o poza din telefon. */
-  var picFor = null;
+  /* Formularul pentru care omul alege acum o poza din telefon, si butonul de pe care a pornit alegerea. */
+  var picFor = null, picFocus = '';
+  /* Pe un telefon sau o tableta se ofera si fotografierea pe loc; pe un calculator butonul ar deschide tot alegerea de fisiere. */
+  var CAMERA = false;
+  try { CAMERA = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0; } catch (e) { CAMERA = false; }
   /* Incarcarea pozelor in cont: una pe rand. pumping tine numele celei aflate pe drum ('*' cat se sterg fisiere);
      pumpSeq numara cererile, ca raspunsul uneia date pierduta sa nu mai fie luat in seama; pumpFails numara incercarile
      cazute la rand. closing: contul se sterge chiar acum. */
@@ -1145,18 +1148,20 @@
      fisiere a telefonului prin campul pic-file din pagina, care sta in afara ecranelor si nu se redeseneaza niciodata:
      cat omul alege poza, ecranul se poate redesena fara ca alegerea lui sa se piarda. */
   function photoRow(id, key, path, busy) {
-    var pick = function (label) {
-      return '<button type="button" class="link" data-act="pic-pick" data-form="' + id + '" data-focus="' + id + '-pick">' + esc(tr(label)) + '</button>';
-    };
+    /* Pe telefon: o poza facuta pe loc (deschide direct camera) sau una din telefon. Pe calculator doar a doua. */
+    var picks = (CAMERA
+      ? '<button type="button" class="link" data-act="pic-pick" data-cam="1" data-form="' + id + '" data-focus="' + id + '-cam">' + esc(tr('photoTake')) + '</button>'
+      : '') +
+      '<button type="button" class="link" data-act="pic-pick" data-form="' + id + '" data-focus="' + id + '-pick">' + esc(tr('photoPick')) + '</button>';
     if (busy) {
       return '<div class="line" id="' + id + '-pic"><div><div class="line-t">' + esc(tr('photo')) + '</div><div class="line-s" role="status">' + esc(tr('photoBusy')) + '</div></div></div>';
     }
     if (!key) {
       return '<div class="line" id="' + id + '-pic"><div><div class="line-t">' + esc(tr('photo')) + '</div><div class="line-s">' + esc(tr('photoSub')) + '</div></div>' +
-        pick('pick') + '</div>';
+        '<div class="pic-acts">' + picks + '</div></div>';
     }
     return '<div class="pic" id="' + id + '-pic">' + shotBox(key, path, 'thumb') +
-      '<div class="pic-acts">' + pick('photoChange') +
+      '<div class="pic-acts">' + picks +
       '<button type="button" class="link" data-act="pic-drop" data-form="' + id + '" data-focus="' + id + '-drop">' + esc(tr('photoRemove')) + '</button></div></div>';
   }
 
@@ -1167,13 +1172,14 @@
     return ['', ''];
   }
 
-  /* Redeseneaza doar randul pozei. Cine a ajuns la el cu tastatura ramane pe el. */
+  /* Redeseneaza doar randul pozei. Cine a ajuns la el cu tastatura ramane pe el, pe butonul de pe care a pornit alegerea. */
   function drawPicRow(id, form) {
-    var el = byId(id + '-pic'), sh = formShot(form);
+    var el = byId(id + '-pic'), sh = formShot(form), act = document.activeElement, key = null;
     if (!el) return;
-    var here = el.contains(document.activeElement);
+    if (el.contains(act)) key = act.getAttribute('data-focus') || id + '-pick';
+    else if (act === document.body) key = picFocus || id + '-pick';
     el.outerHTML = photoRow(id, sh[0], sh[1], form.picBusy);
-    var btn = here || document.activeElement === document.body ? viewEl.querySelector('[data-focus="' + id + '-pick"]') : null;
+    var btn = key ? viewEl.querySelector('[data-focus="' + key + '"]') || viewEl.querySelector('[data-focus="' + id + '-pick"]') : null;
     if (btn) btn.focus({ preventScroll: true });
   }
 
@@ -1929,10 +1935,13 @@
       openNotes[id] = !openNotes[id];
       render();
     } else if (act === 'pic-pick') {
-      /* Campul de fisiere sta in pagina, in afara ecranelor; aici doar i se spune pentru cine se alege. */
+      /* Campul de fisiere sta in pagina, in afara ecranelor; aici doar i se spune pentru cine se alege si de unde:
+         cu "capture", telefonul deschide direct camera; fara, galeria sau fisierele. */
       var chooser = byId('pic-file');
       picFor = b.getAttribute('data-form') === 'act' ? add : noteForm;
+      picFocus = b.getAttribute('data-focus') || '';
       PHOTO.ready();
+      if (b.hasAttribute('data-cam')) chooser.setAttribute('capture', 'environment'); else chooser.removeAttribute('capture');
       chooser.value = '';
       chooser.click();
     } else if (act === 'pic-drop') {

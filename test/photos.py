@@ -62,16 +62,22 @@ def picture(name, w, h, kind="JPEG", alpha=False):
 CHOOSERS = {}
 
 
-def pick(page, form, path, between=None, press=None):
-    """Alege o poza ca un om: apasa butonul din formular (sau o tasta, cu butonul deja ales), apoi raspunde ferestrei
-    de alegere a fisierelor. Ferestrele deschise de o pagina se aduna in CHOOSERS, prin ascultatorul pus la crearea ei."""
+GALLERY = '[data-act="pic-pick"]:not([data-cam])'
+CAMERA = '[data-act="pic-pick"][data-cam]'
+
+
+def pick(page, form, path, between=None, press=None, camera=False):
+    """Alege o poza ca un om: apasa butonul din formular (din telefon sau, cu camera=True, pe loc; sau o tasta, cu butonul
+    deja ales), apoi raspunde ferestrei de alegere a fisierelor. Ferestrele deschise de o pagina se aduna in CHOOSERS,
+    prin ascultatorul pus la crearea ei."""
     opened = CHOOSERS[page]
     del opened[:]
-    page.wait_for_selector('#%s-pic [data-act="pic-pick"]' % form, timeout=8000)
+    button = "#%s-pic %s" % (form, CAMERA if camera else GALLERY)
+    page.wait_for_selector(button, timeout=8000)
     if press:
         page.keyboard.press(press)
     else:
-        page.click('#%s-pic [data-act="pic-pick"]' % form)
+        page.click(button)
     until(page, lambda: len(opened) == 1, "fereastra de alegere a fisierelor nu s-a deschis (%s, %s)" % (form, pathlib.Path(path).name))
     if between:
         between()
@@ -161,7 +167,8 @@ try:
         # ------------------------------------------------------------ o activitate publica, notata cu poza
         oa.click("a.btn-plus")
         soft(lambda: oa.wait_for_selector("#act-pic", timeout=8000), "cu baza de date la zi, formularul ofera randul Poza")
-        check(text(oa, '#act-pic [data-act="pic-pick"]') == "Alege" and "o vede cine vede activitatea" in text(oa, "#act-pic"), "randul spune cine vede poza si invita la alegere")
+        check(text(oa, "#act-pic " + GALLERY) == "Alege o poză" and "o vede cine vede activitatea" in text(oa, "#act-pic"), "randul spune cine vede poza si invita la alegere")
+        check(oa.locator(CAMERA).count() == 0, "pe un calculator, fara ecran tactil, nu se ofera fotografierea pe loc")
         oa.fill("#act-name", "Tort pentru vecina")
         pick(oa, "act", str(PICS / "nu-e-poza.jpg"))
         soft(lambda: wait_text(oa, "#toast", "Poza nu a putut fi citită"), "un fisier care nu e poza este refuzat cu un mesaj clar")
@@ -179,7 +186,7 @@ try:
         check(redrawn == [True], "cat timp omul alegea poza, ecranul s-a redesenat, ca la intoarcerea din camera telefonului")
         soft(lambda: oa.wait_for_selector("#act-pic .shot img", timeout=10000), "poza aleasa ajunge totusi in formular, micsorata")
         check(oa.input_value("#act-name") == "Tort pentru vecina", "alegerea pozei nu sterge ce era scris")
-        check(text(oa, '#act-pic [data-act="pic-pick"]') == "Schimbă poza" and oa.locator('[data-act="pic-drop"]').count() == 1, "poza aleasa poate fi schimbata sau scoasa")
+        check(text(oa, "#act-pic " + GALLERY) == "Alege o poză" and oa.locator('[data-act="pic-drop"]').count() == 1, "poza aleasa poate fi schimbata sau scoasa")
         oa.click('[data-act="pub"][data-v="1"]')
         check(oa.locator("#act-pic .shot img").count() == 1, "poza ramane dupa alegerea vizibilitatii")
         oa.wait_for_timeout(2500)
@@ -234,7 +241,7 @@ try:
         # ------------------------------------------------------------ poza unei activitati private nu poate fi adusa de altcineva
         oa.click("a.btn-plus")
         oa.fill("#act-name", "Doar pentru mine")
-        oa.focus('#act-pic [data-act="pic-pick"]')
+        oa.focus("#act-pic " + GALLERY)
         pick(oa, "act", tall, press="Enter")
         soft(lambda: oa.wait_for_selector("#act-pic .shot img", timeout=10000), "poza se poate alege si doar cu tastatura")
         check(oa.evaluate("() => document.activeElement && document.activeElement.getAttribute('data-focus')") == "act-pick", "iar dupa alegere tastatura ramane pe randul pozei")
@@ -391,7 +398,7 @@ try:
         oa.click("#dlg-link")
         oa.wait_for_selector("#note-pic .shot")
         oa.click('[data-act="pic-drop"]')
-        check(oa.locator("#note-pic .shot").count() == 0 and text(oa, '#note-pic [data-act="pic-pick"]') == "Alege", "dupa Scoate poza, formularul invita din nou la alegere")
+        check(oa.locator("#note-pic .shot").count() == 0 and text(oa, "#note-pic " + GALLERY) == "Alege o poză", "dupa Scoate poza, formularul invita din nou la alegere")
         deletes = []
         oa.route("**/storage/v1/object/photos", lambda r: deletes.append(r) if r.request.method == "DELETE" else r.continue_())
         oa.click("#note-btn")
@@ -731,8 +738,41 @@ try:
         soft(lambda: until(nw, lambda: files_of("Oana") == "1", "curatenia"), "iar poza ei este stearsa din cont")
         ctx_n.close()
 
+        # ------------------------------------------------------------ pe telefon: poza facuta pe loc
+        # Pe un ecran tactil, randul de poza ofera si fotografierea pe loc. Butonul deschide direct camera telefonului, prin
+        # atributul capture al campului de fisiere; celalalt buton il scoate, ca sa se deschida galeria.
+        ctx_t, tp = new_page({"has_touch": True})
+        sign_in(tp, "oana@example.test", "parola-oana-9")
+        tp.click("a.btn-plus")
+        soft(lambda: tp.wait_for_selector("#act-pic " + CAMERA, timeout=8000), "pe un telefon, formularul ofera si fotografierea pe loc")
+        check(text(tp, "#act-pic " + CAMERA) == "Fă o poză" and text(tp, "#act-pic " + GALLERY) == "Alege o poză", "cu doua butoane: Fa o poza si Alege o poza")
+        tp.fill("#act-name", "Poza pe loc")
+        pick(tp, "act", small, camera=True)
+        check(tp.get_attribute("#pic-file", "capture") == "environment", "butonul de fotografiere cere telefonului sa deschida direct camera")
+        soft(lambda: tp.wait_for_selector("#act-pic .shot img", timeout=10000), "poza facuta apare in formular")
+        check(tp.locator("#act-pic " + CAMERA).count() == 1 and tp.locator("#act-pic " + GALLERY).count() == 1 and tp.locator('[data-act="pic-drop"]').count() == 1,
+              "langa ea raman amandoua butoanele si Scoate poza")
+        check(tp.evaluate("() => document.activeElement && document.activeElement.getAttribute('data-focus')") == "act-cam", "iar tastatura ramane pe butonul folosit")
+        tp.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
+        drop = tp.locator('#act-pic [data-act="pic-drop"]').bounding_box()
+        save = tp.locator("#save-btn").bounding_box()
+        check(drop["y"] + drop["height"] <= save["y"], "la capatul formularului, cele trei butoane ale pozei se vad intregi deasupra butonului de salvare")
+        shot(tp, "p11-telefon-camera.png")
+        no_overflow(tp, "notare cu camera 390")
+        pick(tp, "act", big)
+        check(tp.get_attribute("#pic-file", "capture") is None, "butonul Alege o poza nu mai cere camera: se deschide galeria")
+        soft(lambda: until(tp, lambda: nat(tp, "#act-pic .shot img") == [1280, 853], "poza din galerie"), "poza din galerie ii ia locul celei facute")
+        tp.click("#save-btn")
+        soft(lambda: saved(tp), "activitatea ajunge in cont cu poza ei")
+        check(photo_of("Poza pe loc").endswith("-1280x853.jpg"), "in baza: poza din galerie")
+        today(tp)
+        tp.click(row("Poza pe loc"))
+        tp.click("#dlg-ok")
+        soft(lambda: saved(tp), "activitatea de proba este stearsa")
+        ctx_t.close()
+
         # ------------------------------------------------------------ ecran ingust
-        ctx_s, sm = new_page({"viewport": {"width": 320, "height": 568}})
+        ctx_s, sm = new_page({"viewport": {"width": 320, "height": 568}, "has_touch": True})
         sign_in(sm, "oana@example.test", "parola-oana-9")
         soft(lambda: wait_count(sm, row("Rasarit la munte"), 1), "pe un ecran de 320 apare activitatea")
         no_overflow(sm, "azi cu semne de poza 320")
