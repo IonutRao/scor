@@ -141,7 +141,9 @@ server = start()
 setting(feed=1000)
 try:
     with sync_playwright() as p:
-        browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium", args=["--no-sandbox"])
+        # Camera telefonului este inlocuita de o camera falsa a browserului, cu o imagine care se misca; voie se da singura.
+        browser = p.chromium.launch(executable_path="/opt/pw-browsers/chromium",
+                                    args=["--no-sandbox", "--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"])
         opts = dict(viewport={"width": 390, "height": 844}, device_scale_factor=2, locale="ro-RO", timezone_id="Europe/Bucharest")
         errs = []
 
@@ -738,21 +740,44 @@ try:
         soft(lambda: until(nw, lambda: files_of("Oana") == "1", "curatenia"), "iar poza ei este stearsa din cont")
         ctx_n.close()
 
-        # ------------------------------------------------------------ pe telefon: poza facuta pe loc
-        # Pe un ecran tactil, randul de poza ofera si fotografierea pe loc. Butonul deschide direct camera telefonului, prin
-        # atributul capture al campului de fisiere; celalalt buton il scoate, ca sa se deschida galeria.
+        # ------------------------------------------------------------ pe telefon: poza facuta pe loc, cu camera din aplicatie
+        # Pe un ecran tactil, randul de poza ofera si fotografierea pe loc. Camera se deschide chiar in pagina, nu in aplicatia
+        # de camera a telefonului (cat era aceea deschisa, telefoanele cu memorie putina inchideau pagina si se pierdea tot).
         ctx_t, tp = new_page({"has_touch": True})
+        ctx_t.grant_permissions(["camera"])
         sign_in(tp, "oana@example.test", "parola-oana-9")
         tp.click("a.btn-plus")
         soft(lambda: tp.wait_for_selector("#act-pic " + CAMERA, timeout=8000), "pe un telefon, formularul ofera si fotografierea pe loc")
         check(text(tp, "#act-pic " + CAMERA) == "Fă o poză" and text(tp, "#act-pic " + GALLERY) == "Alege o poză", "cu doua butoane: Fa o poza si Alege o poza")
         tp.fill("#act-name", "Poza pe loc")
-        pick(tp, "act", small, camera=True)
-        check(tp.get_attribute("#pic-file", "capture") == "environment", "butonul de fotografiere cere telefonului sa deschida direct camera")
-        soft(lambda: tp.wait_for_selector("#act-pic .shot img", timeout=10000), "poza facuta apare in formular")
+        tp.click("#act-pic " + CAMERA)
+        soft(lambda: tp.wait_for_selector("#cam:not([hidden]) video", timeout=8000), "Fa o poza deschide camera in aplicatie, peste formular")
+        soft(lambda: until(tp, lambda: tp.evaluate("() => { const v = document.getElementById('cam-view'); return v.videoWidth > 0 && !document.getElementById('cam-shot').disabled; }"), "imaginea camerei"),
+             "imaginea camerei apare si butonul de fotografiere se deschide")
+        check(tp.locator("#cam-msg").is_hidden() and tp.locator("#cam-native").is_hidden(), "fara niciun mesaj de eroare")
+        shot(tp, "p12-camera.png")
+        no_overflow(tp, "camera 390")
+        # Butonul Inapoi al telefonului inchide camera, nu ecranul.
+        tp.go_back()
+        soft(lambda: tp.wait_for_selector("#cam[hidden]", state="attached", timeout=8000), "butonul Inapoi inchide camera")
+        check(tp.locator("#act-name").count() == 1 and tp.input_value("#act-name") == "Poza pe loc", "si formularul este tot acolo, cu ce era scris")
+        check(tp.evaluate("() => !document.getElementById('cam-view')"), "camera a fost oprita")
+        tp.click("#act-pic " + CAMERA)
+        soft(lambda: until(tp, lambda: tp.evaluate("() => { const v = document.getElementById('cam-view'); return !!v && v.videoWidth > 0 && !document.getElementById('cam-shot').disabled; }"), "imaginea camerei"),
+             "camera se deschide din nou")
+        tp.click("#cam-close")
+        soft(lambda: tp.wait_for_selector("#cam[hidden]", state="attached", timeout=8000), "X inchide camera")
+        check(tp.evaluate("() => document.activeElement && document.activeElement.getAttribute('data-focus')") == "act-cam", "si tastatura ramane pe butonul Fa o poza")
+        tp.click("#act-pic " + CAMERA)
+        until(tp, lambda: tp.evaluate("() => { const v = document.getElementById('cam-view'); return !!v && v.videoWidth > 0 && !document.getElementById('cam-shot').disabled; }"), "imaginea camerei")
+        tp.click("#cam-shot")
+        soft(lambda: tp.wait_for_selector("#act-pic .shot img", timeout=10000), "la apasarea butonului poza este facuta si apare in formular")
+        check(tp.locator("#cam").is_hidden(), "iar camera s-a inchis")
+        taken = nat(tp, "#act-pic .shot img")
+        check(taken is not None and 320 <= taken[0] <= 1280 and 240 <= taken[1] <= 1280, "poza facuta are o marime potrivita: %s" % taken)
+        check(tp.input_value("#act-name") == "Poza pe loc", "ce era scris a ramas")
         check(tp.locator("#act-pic " + CAMERA).count() == 1 and tp.locator("#act-pic " + GALLERY).count() == 1 and tp.locator('[data-act="pic-drop"]').count() == 1,
               "langa ea raman amandoua butoanele si Scoate poza")
-        check(tp.evaluate("() => document.activeElement && document.activeElement.getAttribute('data-focus')") == "act-cam", "iar tastatura ramane pe butonul folosit")
         tp.evaluate("() => window.scrollTo(0, document.documentElement.scrollHeight)")
         drop = tp.locator('#act-pic [data-act="pic-drop"]').bounding_box()
         save = tp.locator("#save-btn").bounding_box()
@@ -760,7 +785,7 @@ try:
         shot(tp, "p11-telefon-camera.png")
         no_overflow(tp, "notare cu camera 390")
         pick(tp, "act", big)
-        check(tp.get_attribute("#pic-file", "capture") is None, "butonul Alege o poza nu mai cere camera: se deschide galeria")
+        check(tp.get_attribute("#pic-file", "capture") is None, "Alege o poza deschide galeria, nu camera")
         soft(lambda: until(tp, lambda: nat(tp, "#act-pic .shot img") == [1280, 853], "poza din galerie"), "poza din galerie ii ia locul celei facute")
         tp.click("#save-btn")
         soft(lambda: saved(tp), "activitatea ajunge in cont cu poza ei")
@@ -770,6 +795,111 @@ try:
         tp.click("#dlg-ok")
         soft(lambda: saved(tp), "activitatea de proba este stearsa")
         ctx_t.close()
+
+        # Camera refuzata de browser: un mesaj si butonul pentru camera telefonului, care deschide alegerea de fisiere cu capture.
+        ctx_d, dp = new_page({"has_touch": True})
+        dp.add_init_script("""navigator.mediaDevices.getUserMedia = () => Promise.reject(Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }));""")
+        sign_in(dp, "oana@example.test", "parola-oana-9")
+        dp.click("a.btn-plus")
+        dp.fill("#act-name", "Camera refuzata")
+        dp.click("#act-pic " + CAMERA)
+        soft(lambda: wait_text(dp, "#cam-msg", "nu are voie să folosească camera"), "cand browserul nu da voie la camera, aplicatia spune asta")
+        check(dp.evaluate("() => document.getElementById('cam-shot').disabled") is True and dp.locator("#cam-native").is_visible(), "fara buton de fotografiere, dar cu Foloseste camera telefonului")
+        shot(dp, "p13-camera-refuzata.png")
+        opened = CHOOSERS[dp]
+        del opened[:]
+        dp.click("#cam-native")
+        soft(lambda: until(dp, lambda: len(opened) == 1, "fereastra de alegere"), "butonul deschide camera telefonului, prin alegerea de fisiere")
+        check(dp.get_attribute("#pic-file", "capture") == "environment" and dp.locator("#cam").is_hidden(), "cu capture, ca telefonul sa deschida direct camera; ecranul camerei din aplicatie s-a inchis")
+        opened[0].set_files(small)
+        soft(lambda: dp.wait_for_selector("#act-pic .shot img", timeout=10000), "poza facuta cu camera telefonului apare in formular")
+        check(dp.input_value("#act-name") == "Camera refuzata", "ce era scris a ramas")
+        ctx_d.close()
+
+        # Un browser fara camera in pagina: Fa o poza deschide direct camera telefonului.
+        ctx_u, up = new_page({"has_touch": True})
+        up.add_init_script("""Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });""")
+        sign_in(up, "oana@example.test", "parola-oana-9")
+        up.click("a.btn-plus")
+        up.fill("#act-name", "Fara camera in pagina")
+        pick(up, "act", tall, camera=True)
+        check(up.get_attribute("#pic-file", "capture") == "environment" and up.locator("#cam").is_hidden(), "fara camera in pagina, Fa o poza deschide direct camera telefonului")
+        soft(lambda: up.wait_for_selector("#act-pic .shot img", timeout=10000), "iar poza apare in formular")
+        ctx_u.close()
+
+        # ------------------------------------------------------------ ciorna formularului
+        # Pagina este reincarcata cu formularul deschis (telefonul a inchis aplicatia cat era deschisa camera sau galeria):
+        # ce era scris si poza aleasa sunt la loc.
+        ctx_c, cp = new_page({"has_touch": True})
+        sign_in(cp, "oana@example.test", "parola-oana-9")
+        cp.click("a.btn-plus")
+        cp.fill("#act-name", "Ciornă păstrată")
+        cp.click('[data-act="step"][data-d="1"]')
+        cp.click('[data-act="step"][data-d="1"]')
+        cp.click('[data-act="pub"][data-v="1"]')
+        cp.click('[data-act="note-open"]')
+        cp.fill("#act-note", "Scris înainte de reîncărcare.")
+        pick(cp, "act", small)
+        cp.wait_for_selector("#act-pic .shot img", timeout=10000)
+        cp.wait_for_timeout(500)
+        cp.reload()
+        cp.wait_for_selector("#save-btn")
+        soft(lambda: wait_text(cp, "#toast", "Am păstrat ce scriseseși"), "dupa reincarcare aplicatia spune ca a pastrat ce era scris")
+        check(cp.input_value("#act-name") == "Ciornă păstrată" and text(cp, "#pts-val") == "12", "titlul si punctele sunt la loc")
+        check(cp.get_attribute('[data-act="pub"][data-v="1"]', "aria-pressed") == "true" and cp.input_value("#act-note").strip() == "Scris înainte de reîncărcare.", "la fel vizibilitatea si detaliile")
+        soft(lambda: until(cp, lambda: nat(cp, "#act-pic .shot img") == [320, 200], "poza ciornei"), "si poza aleasa inainte")
+        cp.click("#save-btn")
+        soft(lambda: saved(cp), "activitatea se salveaza cu tot cu ele")
+        check(db("select pts || '/' || is_public || '/' || note from public.entries where name = 'Ciornă păstrată'") == "12/true/Scris înainte de reîncărcare."
+              and photo_of("Ciornă păstrată").endswith("-320x200.jpg"), "in baza: punctele, vizibilitatea, detaliile si poza")
+        cp.wait_for_timeout(500)
+        cp.reload()
+        today(cp)
+        cp.click(row("Ciornă păstrată"))
+        cp.click("#dlg-ok")
+        soft(lambda: saved(cp), "activitatea de proba este stearsa")
+        soft(lambda: until(cp, lambda: files_of("Oana") == "1", "curatenia"), "impreuna cu poza ei")
+        today(cp)
+        cp.click("a.btn-plus")
+        check(cp.input_value("#act-name") == "" and cp.locator("#act-pic .shot").count() == 0, "dupa salvare, un formular nou este gol")
+        # Un formular parasit fara salvare nu lasa nicio ciorna in urma.
+        cp.fill("#act-name", "Renunț")
+        pick(cp, "act", small)
+        cp.wait_for_selector("#act-pic .shot img", timeout=10000)
+        cp.click("a.icon-btn")
+        cp.wait_for_selector("#score")
+        check(cp.evaluate("() => localStorage.getItem('scor.draft')") is None, "la inchiderea formularului ciorna dispare")
+        soft(lambda: until(cp, lambda: cp.evaluate(KEPT)[0] == 0, "curatenia de pe dispozitiv"), "impreuna cu poza ei de pe dispozitiv")
+        cp.click("a.btn-plus")
+        check(cp.input_value("#act-name") == "", "iar formularul urmator este gol")
+        cp.click("a.icon-btn")
+        # Ecranul de detalii: textul si poza noua supravietuiesc si ele unei reincarcari.
+        cp.click(row("Rasarit la munte"))
+        cp.click("#dlg-link")
+        cp.wait_for_selector("#note-input")
+        cp.fill("#note-input", "Detalii noi, nesalvate încă.")
+        pick(cp, "note", small)
+        soft(lambda: until(cp, lambda: nat(cp, "#note-pic .shot img") == [320, 200], "poza noua"), "o poza noua este aleasa pe ecranul de detalii")
+        cp.wait_for_timeout(500)
+        cp.reload()
+        soft(lambda: cp.wait_for_selector("#note-input", timeout=8000), "dupa reincarcare ecranul de detalii este tot deschis")
+        check(text(cp, "h1") == "Detalii și poză" and cp.input_value("#note-input").strip() == "Detalii noi, nesalvate încă.", "cu textul scris")
+        soft(lambda: until(cp, lambda: nat(cp, "#note-pic .shot img") == [320, 200], "poza ciornei"), "si cu poza noua")
+        cp.click("#note-btn")
+        soft(lambda: saved(cp), "salvarea merge")
+        check(db("select note from public.entries where name = 'Rasarit la munte'") == "Detalii noi, nesalvate încă." and photo_of("Rasarit la munte").endswith("-320x200.jpg"),
+              "in baza: detaliile si poza cea noua")
+        soft(lambda: until(cp, lambda: files_of("Oana") == "1", "curatenia"), "poza veche a fost stearsa din cont")
+        # O ciorna veche, ramasa de la alt ecran, nu se baga peste un formular deschis mai tarziu.
+        cp.click('#nav a[data-route="azi"]')
+        cp.click("a.btn-plus")
+        cp.fill("#act-name", "Ciornă veche")
+        cp.evaluate("() => { const d = JSON.parse(localStorage.getItem('scor.draft')); d.at -= 13 * 3600000; localStorage.setItem('scor.draft', JSON.stringify(d)); }")
+        cp.reload()
+        cp.wait_for_selector("#save-btn")
+        check(cp.input_value("#act-name") == "" and cp.evaluate("() => localStorage.getItem('scor.draft')") is None, "o ciorna mai veche de o zi nu mai este folosita")
+        cp.click("a.icon-btn")
+        ctx_c.close()
 
         # ------------------------------------------------------------ ecran ingust
         ctx_s, sm = new_page({"viewport": {"width": 320, "height": 568}, "has_touch": True})
@@ -809,13 +939,17 @@ try:
 
         # ------------------------------------------------------------ o poza noua refuzata, pusa in locul uneia vechi
         # Cea veche se sterge oricum din cont, deci si contul trebuie sa afle ca activitatea a ramas fara poza.
+        # Intai primul dispozitiv afla de schimbarile facute intre timp de pe celelalte.
+        oa.click('#nav a[data-route="profil"]')
+        oa.click('[data-act="sync-now"]')
+        soft(lambda: until(oa, lambda: any(e.get("photo") == photo_of("Rasarit la munte") for e in local(oa)["entries"]), "starea contului"), "primul dispozitiv este la zi cu poza pusa de pe al doilea")
         db("update storage.buckets set file_size_limit = 2000 where id = 'photos'")
         today(oa)
         oa.click(row("Rasarit la munte"))
         oa.click("#dlg-link")
         oa.wait_for_selector("#note-pic .shot")
-        pick(oa, "note", small)
-        soft(lambda: until(oa, lambda: nat(oa, "#note-pic .shot img") == [320, 200], "poza noua in formular"), "Oana alege o poza noua in locul celei vechi")
+        pick(oa, "note", big)
+        soft(lambda: until(oa, lambda: nat(oa, "#note-pic .shot img") == [1280, 853], "poza noua in formular"), "Oana alege o poza noua in locul celei vechi")
         oa.click("#note-btn")
         soft(lambda: wait_text(oa, "#toast", "Poza nu a fost primită de server", 10000), "serverul nu o primeste, iar Oana afla")
         soft(lambda: saved(oa), "nimic nu ramane in asteptare")

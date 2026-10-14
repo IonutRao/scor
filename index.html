@@ -202,8 +202,10 @@ button.row:active { opacity: .6; }
 .check { margin-top: 18px; min-height: 44px; display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .check input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--plus-text); }
 .save-wrap { position: sticky; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin-top: 28px; }
-/* While details are being typed the save button stops floating, so it never covers the line being written. */
-.note-field:focus-within ~ .save-wrap { position: static; }
+/* With the details field open the bar stays at the end of the form, so it never covers the line being written. It is not
+   tied to focus: a bar that jumps back to sticky the moment the field loses focus would land under the finger that just
+   tapped a button above it, and could even press Save. */
+.save-wrap.flat { position: static; }
 .save { width: 100%; min-height: 60px; border-radius: 18px; background: var(--plus); color: var(--ink); font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .save.minus { background: var(--minus); }
 
@@ -229,6 +231,22 @@ button.row:active { opacity: .6; }
 .dlg p { margin-top: 6px; font-size: 14px; color: var(--muted); }
 .dlg .dlg-note { margin-top: 14px; padding: 10px 14px; border-radius: 14px; background: var(--bg); white-space: pre-line; overflow-wrap: anywhere; font-size: 15px; line-height: 1.45; color: var(--ink); }
 .dlg-shot { margin-top: 12px; }
+
+/* The in-app camera: the live picture fills the screen, the shutter sits at the bottom */
+.cam { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; color: #fff; }
+.cam[hidden] { display: none; }
+.cam-view { flex: 1; min-height: 0; width: 100%; object-fit: cover; background: #000; }
+.cam-view.mirror { transform: scaleX(-1); }
+.cam-msg { position: absolute; left: 24px; right: 24px; top: 38%; font-size: 16px; line-height: 1.45; text-align: center; color: #fff; }
+.cam-top { position: absolute; top: 0; right: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px; }
+.cam-bar { flex: none; position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; padding: 20px 16px calc(24px + env(safe-area-inset-bottom, 0px)); background: #000; }
+.cam-btn { width: 48px; height: 48px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .16); color: #fff; }
+.cam-shutter { width: 76px; height: 76px; border-radius: 50%; border: 4px solid #fff; background: rgba(255, 255, 255, .28); box-shadow: inset 0 0 0 4px #000; }
+.cam-shutter:active { background: #fff; }
+.cam-shutter:disabled { opacity: .35; }
+.cam-native { position: absolute; left: 16px; right: 16px; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); min-height: 44px; padding: 0 16px; border-radius: 22px; background: #fff; color: #000; font-size: 15px; font-weight: 700; }
+.cam-native[hidden] { display: none; }
+html.cam-open, html.cam-open body { overflow: hidden; }
 .dlg-shot .shot { --shot-max: 46vh; }
 .dlg-link { margin: 4px 0 -8px -6px; }
 .dlg-actions { margin-top: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
@@ -324,6 +342,7 @@ button.row:active { opacity: .6; }
 <nav class="nav" id="nav" aria-label="Secțiuni"></nav>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <input type="file" class="sr pin" id="pic-file" accept="image/*" tabindex="-1" aria-hidden="true">
+<div class="cam" id="cam" role="dialog" aria-modal="true" hidden></div>
 <dialog class="dlg" id="dlg" aria-labelledby="dlg-t">
   <div class="dlg-in">
     <h2 id="dlg-t"></h2>
@@ -444,6 +463,9 @@ var T = {
     detailsWho: 'Le vede cine vede activitatea.', detailsEmpty: 'Lasă gol ca să le ștergi.', hasDetails: 'are detalii',
     saveDetails: 'Salvează detaliile', detailsSaved: 'Detalii salvate', detailsRemoved: 'Detalii șterse',
     photo: 'Poză', photoSub: 'o vede cine vede activitatea', photoTake: 'Fă o poză', photoPick: 'Alege o poză', photoBusy: 'Se pregătește poza...',
+    camShot: 'Fotografiază', camFlip: 'Schimbă camera', camStarting: 'Se pornește camera...', camNative: 'Folosește camera telefonului',
+    camDenied: 'Aplicația nu are voie să folosească camera. Dă-i voie din setările browserului sau folosește camera telefonului.',
+    camNone: 'Nu am găsit nicio cameră.', camError: 'Camera nu a putut fi pornită.', draftKept: 'Am păstrat ce scriseseși.',
     photoRemove: 'Scoate poza', photoBad: 'Poza nu a putut fi citită. Încearcă alta.',
     photoLoading: 'Se încarcă poza...', photoError: 'Poza nu a putut fi încărcată.', photoAlt: 'Poza activității', hasPhoto: 'are poză',
     photoRejected: 'Poza nu a fost primită de server și a fost scoasă.',
@@ -524,6 +546,9 @@ var T = {
     detailsWho: 'Whoever sees the activity sees them.', detailsEmpty: 'Leave it empty to remove them.', hasDetails: 'has details',
     saveDetails: 'Save details', detailsSaved: 'Details saved', detailsRemoved: 'Details removed',
     photo: 'Photo', photoSub: 'seen by whoever sees the activity', photoTake: 'Take a photo', photoPick: 'Choose a photo', photoBusy: 'Preparing the photo...',
+    camShot: 'Take the photo', camFlip: 'Switch camera', camStarting: 'Starting the camera...', camNative: "Use the phone's camera",
+    camDenied: "The app is not allowed to use the camera. Allow it in the browser settings or use the phone's camera.",
+    camNone: 'No camera was found.', camError: 'The camera could not be started.', draftKept: 'What you had written was kept.',
     photoRemove: 'Remove photo', photoBad: 'That photo could not be read. Try another.',
     photoLoading: 'Loading the photo...', photoError: 'The photo could not be loaded.', photoAlt: 'Photo of the activity', hasPhoto: 'has a photo',
     photoRejected: 'The server did not accept the photo, so it was removed.',
@@ -933,6 +958,228 @@ var PHOTO = (function () {
   return { shrink: shrink, size: size, ready: ready, put: put, get: get, del: del, keep: keep, clear: clear, NAME: NAME };
 })();
 
+/* Scorul zilei: camera din aplicatie. Arata imaginea camerei telefonului chiar in pagina si face poza la apasare,
+   fara sa treaca prin aplicatia de camera a telefonului: cat timp aceea era deschisa, telefoanele cu memorie putina
+   inchideau pagina noastra din fundal, iar poza si ce fusese scris se pierdeau.
+   Nimic de aici nu vorbeste cu reteaua si nu stie de restul aplicatiei: primeste textele si un loc in pagina,
+   intoarce poza (un Blob JPEG) sau null daca omul a renuntat. */
+var CAM = (function () {
+  'use strict';
+
+  var root = null, video = null, stream = null, facing = 'environment', done = null, texts = {}, onNative = null;
+  var busy = false, cameras = 0, waitTimer = null;
+  /* Cat se asteapta primul cadru inainte sa se spuna ca nu merge camera. */
+  var FIRST_FRAME = 8000;
+  var SVG = 'xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+  var ICON_CLOSE = '<svg aria-hidden="true" width="24" height="24" ' + SVG + '><path d="M5 5l14 14M19 5L5 19"/></svg>';
+  var ICON_FLIP = '<svg aria-hidden="true" width="24" height="24" ' + SVG + '><path d="M20 12a8 8 0 0 1-14.9 4M4 12a8 8 0 0 1 14.9-4"/><path d="M4 20v-4h4M20 4v4h-4"/></svg>';
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function supported() {
+    try {
+      return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.HTMLCanvasElement && window.URL);
+    } catch (e) { return false; }
+  }
+
+  function isOpen() { return !!(root && !root.hidden); }
+
+  function byId(id) { return root ? root.querySelector('#' + id) : null; }
+
+  function stopStream() {
+    if (stream) stream.getTracks().forEach(function (t) { try { t.stop(); } catch (e) { /* oprita deja */ } });
+    stream = null;
+    if (video) { try { video.pause(); video.srcObject = null; } catch (e) { /* fara imagine */ } }
+  }
+
+  function message(key, withNative) {
+    var msg = byId('cam-msg'), alt = byId('cam-native'), shot = byId('cam-shot');
+    if (!msg) return;
+    msg.textContent = key ? texts[key] || key : '';
+    msg.hidden = !key;
+    if (alt) alt.hidden = !withNative;
+    if (shot) shot.disabled = !!key;
+  }
+
+  /* Porneste camera ceruta; daca telefonul nu o are pe cea din spate (sau e un calculator), merge orice camera. */
+  function constraints(any) {
+    var v = { width: { ideal: 1920 }, height: { ideal: 1440 } };
+    if (!any) v.facingMode = facing;
+    return { audio: false, video: v };
+  }
+
+  function start() {
+    message('camStarting', false);
+    stopStream();
+    return navigator.mediaDevices.getUserMedia(constraints(false)).then(null, function (err) {
+      var name = err && err.name;
+      if (name === 'OverconstrainedError' || name === 'NotFoundError' || name === 'ConstraintNotSatisfiedError') {
+        return navigator.mediaDevices.getUserMedia(constraints(true));
+      }
+      throw err;
+    }).then(function (s) {
+      if (!isOpen()) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      stream = s;
+      var track = s.getVideoTracks()[0], settings = track && track.getSettings ? track.getSettings() : {};
+      /* Camera din fata se arata in oglinda, ca intr-o oglinda; poza facuta nu este intoarsa. */
+      video.classList.toggle('mirror', settings.facingMode === 'user' || (facing === 'user' && !settings.facingMode));
+      video.srcObject = s;
+      var p = video.play();
+      if (p && p.then) p.then(null, function () { /* porneste singur la primul cadru */ });
+      /* Butonul de fotografiere se deschide abia cand exista un cadru de fotografiat. */
+      clearTimeout(waitTimer);
+      waitTimer = setTimeout(function () { if (isOpen() && !(video.videoWidth > 0)) message('camError', true); }, FIRST_FRAME);
+      video.onloadeddata = function () {
+        clearTimeout(waitTimer);
+        if (isOpen() && stream === s) message('', false);
+      };
+      countCameras();
+    }, function (err) {
+      if (!isOpen()) return;
+      var name = (err && err.name) || '';
+      var key = name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError' ? 'camDenied'
+        : name === 'NotFoundError' || name === 'DevicesNotFoundError' ? 'camNone' : 'camError';
+      message(key, true);
+    });
+  }
+
+  /* Butonul de schimbare a camerei apare doar daca exista cel putin doua. */
+  function countCameras() {
+    if (!navigator.mediaDevices.enumerateDevices) return;
+    navigator.mediaDevices.enumerateDevices().then(function (list) {
+      cameras = list.filter(function (d) { return d.kind === 'videoinput'; }).length;
+      var flip = byId('cam-flip');
+      if (flip) flip.hidden = cameras < 2;
+    }, function () { /* ramane cum e */ });
+  }
+
+  /* Poza este chiar cadrul de pe ecran, asa cum il arata browserul: cu orientarea corecta, oricum ar fi tinut telefonul.
+     (Pozele cerute direct camerei, prin ImageCapture, vin pe unele telefoane intoarse pe o parte.) */
+  function snap() {
+    if (!stream || !stream.getVideoTracks()[0]) return Promise.reject(new Error('no_stream'));
+    var w = video.videoWidth, h = video.videoHeight;
+    if (!w || !h) return Promise.reject(new Error('no_frame'));
+    var canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return Promise.reject(new Error('no_canvas'));
+    ctx.drawImage(video, 0, 0, w, h);
+    return new Promise(function (resolve, reject) {
+      canvas.toBlob(function (blob) {
+        canvas.width = 0;
+        if (blob) resolve(blob); else reject(new Error('no_blob'));
+      }, 'image/jpeg', 0.92);
+    });
+  }
+
+  function finish(result) {
+    var fn = done;
+    done = null;
+    busy = false;
+    clearTimeout(waitTimer);
+    stopStream();
+    if (root) { root.hidden = true; root.innerHTML = ''; }
+    document.documentElement.classList.remove('cam-open');
+    /* Pasul pus in istoric la deschidere se scoate, ca butonul Inapoi sa nu il mai gaseasca. */
+    try { if (window.history.state && window.history.state.cam) window.history.back(); } catch (e) { /* fara istoric */ }
+    if (fn) fn(result || null);
+  }
+
+  function onClick(ev) {
+    var b = ev.target.closest ? ev.target.closest('button') : null;
+    if (!b || busy) return;
+    if (b.id === 'cam-close') {
+      finish(null);
+    } else if (b.id === 'cam-flip') {
+      facing = facing === 'user' ? 'environment' : 'user';
+      start();
+    } else if (b.id === 'cam-native') {
+      /* Camera telefonului, prin alegerea de fisiere: trebuie pornita chiar din apasarea omului. */
+      var fn = onNative;
+      finish(null);
+      if (fn) fn();
+    } else if (b.id === 'cam-shot') {
+      busy = true;
+      b.disabled = true;
+      snap().then(function (blob) {
+        finish(blob);
+      }, function () {
+        busy = false;
+        b.disabled = false;
+        message('camError', true);
+      });
+    }
+  }
+
+  function onKey(ev) {
+    if (ev.key === 'Escape' && isOpen() && !busy) finish(null);
+  }
+
+  function onPop() {
+    /* Butonul Inapoi al telefonului inchide camera, nu paraseste ecranul. */
+    if (isOpen() && !busy) {
+      var fn = done;
+      done = null;
+      busy = false;
+      clearTimeout(waitTimer);
+      stopStream();
+      root.hidden = true;
+      root.innerHTML = '';
+      document.documentElement.classList.remove('cam-open');
+      if (fn) fn(null);
+    }
+  }
+
+  function onVisibility() {
+    if (!isOpen()) return;
+    /* Cat pagina sta in fundal camera se opreste; la intoarcere porneste din nou. */
+    if (document.hidden) stopStream(); else start();
+  }
+
+  /* Deschide camera. t: textele afisate; native: ce se face cand omul alege camera telefonului in loc.
+     Promisiunea se incheie cu poza (Blob) sau cu null. */
+  function open(t, native) {
+    if (!supported()) return Promise.resolve(null);
+    if (isOpen()) finish(null);
+    texts = t || {};
+    onNative = native || null;
+    if (!root) {
+      root = document.getElementById('cam');
+      if (!root) return Promise.resolve(null);
+      root.addEventListener('click', onClick);
+      document.addEventListener('keydown', onKey);
+      window.addEventListener('popstate', onPop);
+      document.addEventListener('visibilitychange', onVisibility);
+    }
+    root.innerHTML = '' +
+      '<video class="cam-view" id="cam-view" autoplay playsinline muted></video>' +
+      '<p class="cam-msg" id="cam-msg" hidden></p>' +
+      '<div class="cam-top"><button type="button" class="cam-btn" id="cam-close" aria-label="' + esc(texts.close || '') + '">' + ICON_CLOSE + '</button></div>' +
+      '<div class="cam-bar">' +
+        '<button type="button" class="cam-btn" id="cam-flip" aria-label="' + esc(texts.camFlip || '') + '" hidden>' + ICON_FLIP + '</button>' +
+        '<button type="button" class="cam-shutter" id="cam-shot" aria-label="' + esc(texts.camShot || '') + '"></button>' +
+        '<button type="button" class="cam-native" id="cam-native" hidden>' + esc(texts.camNative || '') + '</button>' +
+      '</div>';
+    video = root.querySelector('video');
+    root.hidden = false;
+    document.documentElement.classList.add('cam-open');
+    try { window.history.pushState({ cam: true }, '', window.location.href); } catch (e) { /* fara istoric */ }
+    busy = false;
+    var p = new Promise(function (resolve) { done = resolve; });
+    start();
+    var shot = byId('cam-shot');
+    if (shot) shot.focus({ preventScroll: true });
+    return p;
+  }
+
+  return { supported: supported, open: open, isOpen: isOpen };
+})();
+
 /* Scorul zilei: interfata.
    Doua moduri: local (fara server, datele raman pe dispozitiv) si cu cont (datele se salveaza si pe server).
    In ambele, ecranele se deseneaza din datele locale; serverul le aduce la zi in fundal. */
@@ -940,7 +1187,7 @@ var PHOTO = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.4.1';
+  var VERSION = '0.4.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -991,8 +1238,11 @@ var PHOTO = (function () {
   /* Formularul pentru care omul alege acum o poza din telefon, si butonul de pe care a pornit alegerea. */
   var picFor = null, picFocus = '';
   /* Pe un telefon sau o tableta se ofera si fotografierea pe loc; pe un calculator butonul ar deschide tot alegerea de fisiere. */
-  var CAMERA = false;
-  try { CAMERA = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0; } catch (e) { CAMERA = false; }
+  var TOUCH = false;
+  try { TOUCH = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || navigator.maxTouchPoints > 0; } catch (e) { TOUCH = false; }
+  /* Ce scrie omul intr-un formular se pastreaza pe dispozitiv (DRAFT_KEY), cel mult DRAFT_FOR, ca sa nu se piarda daca pagina
+     este reincarcata intre timp: telefoanele ramase fara memorie inchid aplicatia cat timp e deschisa camera sau galeria. */
+  var DRAFT_KEY = 'scor.draft', DRAFT_FOR = 12 * 3600000, draftUsed = false, draftBack = false;
   /* Incarcarea pozelor in cont: una pe rand. pumping tine numele celei aflate pe drum ('*' cat se sterg fisiere);
      pumpSeq numara cererile, ca raspunsul uneia date pierduta sa nu mai fie luat in seama; pumpFails numara incercarile
      cazute la rand. closing: contul se sterge chiar acum. */
@@ -1558,8 +1808,8 @@ var PHOTO = (function () {
     focusTitle();
     queueSync(0);
     queuePump(600);
-    /* Pe dispozitiv raman doar pozele care inca asteapta sa plece spre cont. */
-    PHOTO.keep(data.uploads.slice());
+    /* Pe dispozitiv raman doar pozele care inca asteapta sa plece spre cont si cele dintr-un formular inca nesalvat. */
+    PHOTO.keep(data.uploads.concat(draftPics()));
     if (route === 'flux') openFeed();
   }
 
@@ -1711,6 +1961,7 @@ var PHOTO = (function () {
     openDays = {};
     openNotes = {};
     noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
+    clearDraft();
     clearTimeout(pumpTimer);
     pumping = '';
     pumpSeq++;
@@ -2084,7 +2335,7 @@ var PHOTO = (function () {
      cat omul alege poza, ecranul se poate redesena fara ca alegerea lui sa se piarda. */
   function photoRow(id, key, path, busy) {
     /* Pe telefon: o poza facuta pe loc (deschide direct camera) sau una din telefon. Pe calculator doar a doua. */
-    var picks = (CAMERA
+    var picks = (TOUCH
       ? '<button type="button" class="link" data-act="pic-pick" data-cam="1" data-form="' + id + '" data-focus="' + id + '-cam">' + esc(tr('photoTake')) + '</button>'
       : '') +
       '<button type="button" class="link" data-act="pic-pick" data-form="' + id + '" data-focus="' + id + '-pick">' + esc(tr('photoPick')) + '</button>';
@@ -2121,29 +2372,174 @@ var PHOTO = (function () {
   /* Formularul acesta mai este cel de pe ecran? */
   function formShown(form) { return form === add ? isAddRoute(route) : form === noteForm && route === 'detalii'; }
 
-  /* Omul a ales o poza: se micsoreaza, apoi apare in formular. Formularul nu se redeseneaza, ca sa nu se piarda ce e scris in el. */
+  /* Alegerea de fisiere a telefonului: galeria sau, cu capture, aplicatia de camera. Trebuie pornita chiar din apasarea omului. */
+  function openChooser(form, focus, cam) {
+    var chooser = byId('pic-file');
+    picFor = form;
+    picFocus = focus || '';
+    PHOTO.ready();
+    if (cam) chooser.setAttribute('capture', 'environment'); else chooser.removeAttribute('capture');
+    chooser.value = '';
+    chooser.click();
+  }
+
+  /* Camera din aplicatie (src/camera.js). Daca omul alege de acolo camera telefonului, se deschide aceea. */
+  function openCamera(form, focus) {
+    PHOTO.ready();
+    CAM.open({
+      close: tr('close'), camShot: tr('camShot'), camFlip: tr('camFlip'), camStarting: tr('camStarting'), camNative: tr('camNative'),
+      camDenied: tr('camDenied'), camNone: tr('camNone'), camError: tr('camError')
+    }, function () { openChooser(form, focus, true); }).then(function (blob) {
+      if (blob) { receivePhoto(form, blob, focus); return; }
+      var btn = focus ? viewEl.querySelector('[data-focus="' + focus + '"]') : null;
+      if (btn) btn.focus({ preventScroll: true });
+    });
+  }
+
+  /* Poza aleasa intr-un formular, inlocuita sau lasata in urma: imaginea ei pregatita si copia de pe dispozitiv nu mai trebuie. */
+  function forgetPick(pic) {
+    dropShot('pick:' + pic.name);
+    if (!photoUsed(pic.name) && data.uploads.indexOf(pic.name) < 0) PHOTO.del(pic.name, true);
+  }
+
   function pickPhoto(input) {
-    var form = picFor, id = form === add ? 'act' : 'note';
-    var file = input.files && input.files[0];
+    var form = picFor, file = input.files && input.files[0];
     input.value = '';
     picFor = null;
+    receivePhoto(form, file, picFocus);
+  }
+
+  /* O poza aleasa sau facuta: se micsoreaza, apoi apare in formular. Formularul nu se redeseneaza, ca sa nu se piarda ce e scris in el.
+     Poza micsorata se pastreaza pe dispozitiv pana la salvare, odata cu restul formularului. */
+  function receivePhoto(form, file, focus) {
+    var id = form === add ? 'act' : 'note';
+    picFocus = focus || '';
     if (!file || !form || form.picBusy || !formShown(form)) return;
     form.picBusy = true;
     drawPicRow(id, form);
     PHOTO.shrink(file).then(function (r) {
       form.picBusy = false;
       if (!formShown(form)) return;
-      if (form.pic) dropShot('pick:' + form.pic.name);
+      if (form.pic) forgetPick(form.pic);
       shots['pick:' + r.name] = { state: 'ok', url: URL.createObjectURL(r.blob) };
       form.pic = r;
+      PHOTO.put(r.name, r.blob);
       if (form === noteForm) form.drop = false;
       drawPicRow(id, form);
+      saveDraft();
     }, function () {
       form.picBusy = false;
       if (!formShown(form)) return;
       drawPicRow(id, form);
       toast(tr('photoBad'));
     });
+  }
+
+  /* ---------- ciorna formularului ---------- */
+
+  function picInfo(pic) { return pic ? { name: pic.name, w: pic.w, h: pic.h } : null; }
+
+  function saveDraft() {
+    var d = null;
+    if (isAddRoute(route)) {
+      d = { route: route, add: { type: add.type, favId: add.favId, name: add.name, pts: add.pts, keep: add.keep, pub: add.pub, note: add.note, noteOpen: add.noteOpen, pic: picInfo(add.pic) } };
+    } else if (route === 'detalii' && noteForm.id) {
+      d = { route: route, note: { id: noteForm.id, value: noteForm.value, back: noteForm.back, drop: noteForm.drop, pic: picInfo(noteForm.pic) } };
+    }
+    if (!d) return;
+    d.uid = data.uid;
+    d.at = Date.now();
+    try { window.localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* merge si fara ciorna */ }
+  }
+
+  function clearDraft() {
+    try { window.localStorage.removeItem(DRAFT_KEY); } catch (e) { /* nimic de sters */ }
+  }
+
+  function rawDraft() {
+    try {
+      var d = JSON.parse(window.localStorage.getItem(DRAFT_KEY) || 'null');
+      return d && typeof d === 'object' ? d : null;
+    } catch (e) { return null; }
+  }
+
+  /* Ciorna pastrata, daca este a acestui cont si destul de proaspata. */
+  function readDraft() {
+    var d = rawDraft();
+    return d && d.uid === data.uid && Date.now() - d.at < DRAFT_FOR ? d : null;
+  }
+
+  function okPic(p) { return !!p && typeof p.name === 'string' && PHOTO.NAME.test(p.name) ? p : null; }
+
+  /* Pozele unei ciorne, care trebuie sa ramana pe dispozitiv odata cu cele care asteapta sa plece. */
+  function draftPics() {
+    var d = readDraft(), names = [];
+    if (d && d.add && okPic(d.add.pic)) names.push(d.add.pic.name);
+    if (d && d.note && okPic(d.note.pic)) names.push(d.note.pic.name);
+    if (add.pic) names.push(add.pic.name);
+    if (noteForm.pic) names.push(noteForm.pic.name);
+    return names;
+  }
+
+  /* Ciorna nu mai este de folos: dispare, cu tot cu pozele ei nefolosite. */
+  function dropDraft(d) {
+    clearDraft();
+    [d && d.add && okPic(d.add.pic), d && d.note && okPic(d.note.pic)].forEach(function (p) {
+      if (p && !photoUsed(p.name) && data.uploads.indexOf(p.name) < 0) PHOTO.del(p.name, true);
+    });
+  }
+
+  /* Poza unei ciorne se aduce de pe dispozitiv si isi ia locul in formular, cand soseste. */
+  function restorePic(form, id, p) {
+    PHOTO.get(p.name).then(function (blob) {
+      if (!blob || form.pic || form.picBusy) return;
+      shots['pick:' + p.name] = { state: 'ok', url: URL.createObjectURL(blob) };
+      form.pic = { name: p.name, blob: blob, w: +p.w || 0, h: +p.h || 0 };
+      if (form === noteForm) form.drop = false;
+      if (formShown(form)) drawPicRow(id, form);
+    }, function () { /* poza nu mai este pe dispozitiv */ });
+  }
+
+  /* La pornire: pagina a fost reincarcata cu un formular deschis (de exemplu dupa ce telefonul a inchis aplicatia cat era
+     deschisa camera). Formularul se umple la loc, cu poza lui cu tot; altfel ciorna veche se arunca. */
+  function restoreDraft(hash) {
+    var raw = rawDraft(), d = readDraft();
+    if (!d) { if (raw) dropDraft(raw); return; }
+    if ((d.route === 'plus' || d.route === 'minus') && d.add && hash === d.route) {
+      var a = d.add;
+      resetAdd(d.route);
+      draftUsed = true;
+      add.favId = typeof a.favId === 'string' && findFav(a.favId) ? a.favId : null;
+      add.name = typeof a.name === 'string' ? a.name.slice(0, 40) : '';
+      add.pts = L.clampPts(Number(a.pts) || 10);
+      add.keep = !!a.keep;
+      add.pub = BACKEND && !!a.pub;
+      add.note = notesOn() && typeof a.note === 'string' ? a.note.slice(0, L.NOTE_MAX * 2) : '';
+      add.noteOpen = !!a.noteOpen || !!add.note;
+      draftBack = !!(add.name || add.note || okPic(a.pic));
+      if (okPic(a.pic)) restorePic(add, 'act', a.pic);
+      return;
+    }
+    if (d.route === 'detalii' && d.note && hash === 'detalii') {
+      var n = d.note, e = typeof n.id === 'string' ? findEntry(n.id) : null;
+      if (e) {
+        noteForm = {
+          id: e.id, value: typeof n.value === 'string' ? n.value : (e.note || ''), back: MAIN.indexOf(n.back) >= 0 ? n.back : 'azi',
+          photo: e.photo || '', pic: null, drop: !!n.drop, picBusy: false
+        };
+        draftBack = noteForm.value !== (e.note || '') || noteForm.drop || !!okPic(n.pic);
+        if (okPic(n.pic)) restorePic(noteForm, 'note', n.pic);
+        return;
+      }
+    }
+    dropDraft(d);
+  }
+
+  /* Omul a plecat de pe un formular fara sa salveze (sau a salvat): ciorna nu mai trebuie, nici pozele ei nefolosite. */
+  function leaveForm(from) {
+    if (isAddRoute(from) && add.pic) { forgetPick(add.pic); add.pic = null; }
+    if (from === 'detalii' && noteForm.pic) { forgetPick(noteForm.pic); noteForm.pic = null; }
+    clearDraft();
   }
 
   /* Campul de detalii. Randul nou de la inceput este cel pe care pagina il arunca oricum, ca textul sa ramana intreg. */
@@ -2259,7 +2655,7 @@ var PHOTO = (function () {
             '</div></div>' +
           who + addNote() + addPic() +
           '<label class="check" id="keep-row"' + (keepVisible() ? '' : ' hidden') + '><input type="checkbox" id="keep-fav"' + (add.keep ? ' checked' : '') + '><span>' + esc(tr('keepFav')) + '</span></label>' +
-          '<div class="save-wrap"><button type="submit" class="save ' + add.type + '" id="save-btn">' + esc(saveLabel()) + '</button></div>' +
+          '<div class="save-wrap' + (add.noteOpen ? ' flat' : '') + '"><button type="submit" class="save ' + add.type + '" id="save-btn">' + esc(saveLabel()) + '</button></div>' +
         '</form>' +
       '</div>';
   }
@@ -2603,6 +2999,7 @@ var PHOTO = (function () {
   }
 
   function enter(r) {
+    if (r !== route && (isAddRoute(route) || route === 'detalii')) leaveForm(route);
     if (isAddRoute(r)) resetAdd(r);
     if (r === 'nume') nameForm = { value: data.name, busy: false, error: '' };
     route = r;
@@ -2782,6 +3179,7 @@ var PHOTO = (function () {
     noteForm = { id: id, value: e.note || '', back: MAIN.indexOf(route) >= 0 ? route : 'azi', photo: e.photo || '', pic: null, drop: false, picBusy: false };
     navigate('detalii');
     focusEnd('note-input');
+    saveDraft();
   }
 
   /* Pune, schimba sau scoate poza unei activitati. pic este poza noua, deja micsorata, sau null pentru scoatere. */
@@ -2826,6 +3224,7 @@ var PHOTO = (function () {
     var text = L.cleanNote(el ? el.value : noteForm.value);
     var changed = setNote(id, text);
     var pic = !photosOn() ? false : noteForm.pic ? setPhoto(id, noteForm.pic) : noteForm.drop ? setPhoto(id, null) : false;
+    if (noteForm.pic && !photosOn()) forgetPick(noteForm.pic);
     noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
     navigate(back, true);
     if (pic) toast(tr('changesSaved'));
@@ -2850,41 +3249,43 @@ var PHOTO = (function () {
       add.favId = null;
       add.pub = add.type === 'plus' && !!data.pubDefault;
       render();
+      saveDraft();
     } else if (act === 'fav') {
       var f = findFav(id);
       if (!f) return;
       if (add.favId === id) { add.favId = null; add.name = ''; }
       else { add.favId = id; add.name = favName(f); add.pts = f.pts; }
       render();
+      saveDraft();
     } else if (act === 'step') {
       add.pts = L.clampPts(add.pts + Number(b.getAttribute('data-d')));
       syncAdd();
+      saveDraft();
     } else if (act === 'pub') {
       add.pub = b.getAttribute('data-v') === '1';
       render();
+      saveDraft();
     } else if (act === 'note-open') {
       add.noteOpen = true;
       render();
       focusEnd('act-note');
+      saveDraft();
     } else if (act === 'post-note') {
       openNotes[id] = !openNotes[id];
       render();
     } else if (act === 'pic-pick') {
-      /* Campul de fisiere sta in pagina, in afara ecranelor; aici doar i se spune pentru cine se alege si de unde:
-         cu "capture", telefonul deschide direct camera; fara, galeria sau fisierele. */
-      var chooser = byId('pic-file');
-      picFor = b.getAttribute('data-form') === 'act' ? add : noteForm;
-      picFocus = b.getAttribute('data-focus') || '';
-      PHOTO.ready();
-      if (b.hasAttribute('data-cam')) chooser.setAttribute('capture', 'environment'); else chooser.removeAttribute('capture');
-      chooser.value = '';
-      chooser.click();
+      /* "Fa o poza": camera din aplicatie, cand browserul o poate porni; altfel, ca si la "Alege o poza", alegerea de
+         fisiere a telefonului (cu capture, aceasta deschide aplicatia de camera). */
+      var pf = b.getAttribute('data-form') === 'act' ? add : noteForm, cam = b.hasAttribute('data-cam');
+      if (cam && CAM.supported()) openCamera(pf, b.getAttribute('data-focus') || '');
+      else openChooser(pf, b.getAttribute('data-focus') || '', cam);
     } else if (act === 'pic-drop') {
       var form = b.getAttribute('data-form') === 'act' ? add : noteForm;
-      if (form.pic) dropShot('pick:' + form.pic.name);
+      if (form.pic) forgetPick(form.pic);
       form.pic = null;
       if (form === noteForm) form.drop = true;
       drawPicRow(b.getAttribute('data-form'), form);
+      saveDraft();
     } else if (act === 'shot-retry') {
       var key = b.getAttribute('data-key');
       delete shots[key];
@@ -2976,6 +3377,7 @@ var PHOTO = (function () {
       var left = byId(el.id + '-n');
       if (left) left.textContent = el.value.length + '/' + L.NOTE_MAX;
       grow(el);
+      saveDraft();
       return;
     }
     if (el.id !== 'act-name') return;
@@ -2987,6 +3389,7 @@ var PHOTO = (function () {
     var err = byId('name-err');
     if (err) err.hidden = true;
     syncAdd();
+    saveDraft();
   }
 
   function onSubmit(ev) {
@@ -3009,14 +3412,17 @@ var PHOTO = (function () {
     initData();
     lang = pickLang();
     document.documentElement.lang = lang;
+    var hash = '';
+    try { hash = (window.location.hash || '').replace(/^#/, ''); } catch (e) { hash = ''; }
+    restoreDraft(hash);
     route = routeFromHash();
-    if (isAddRoute(route)) resetAdd(route);
+    if (isAddRoute(route) && !draftUsed) resetAdd(route);
     if (route === 'nume') nameForm.value = data.name;
 
     document.addEventListener('click', onClick);
     document.addEventListener('input', onInput);
     document.addEventListener('change', function (ev) {
-      if (ev.target && ev.target.id === 'keep-fav') add.keep = ev.target.checked;
+      if (ev.target && ev.target.id === 'keep-fav') { add.keep = ev.target.checked; saveDraft(); }
       if (ev.target && ev.target.id === 'pic-file') pickPhoto(ev.target);
     });
     document.addEventListener('submit', onSubmit);
@@ -3077,6 +3483,7 @@ var PHOTO = (function () {
     } else {
       render();
     }
+    if (draftBack) toast(tr('draftKept'));
 
     if (CFG.pwa && 'serviceWorker' in navigator && window.location.protocol === 'https:') {
       window.addEventListener('load', function () {

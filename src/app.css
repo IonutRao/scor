@@ -183,8 +183,10 @@ button.row:active { opacity: .6; }
 .check { margin-top: 18px; min-height: 44px; display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
 .check input { flex: none; width: 22px; height: 22px; margin: 0; accent-color: var(--plus-text); }
 .save-wrap { position: sticky; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); margin-top: 28px; }
-/* While details are being typed the save button stops floating, so it never covers the line being written. */
-.note-field:focus-within ~ .save-wrap { position: static; }
+/* With the details field open the bar stays at the end of the form, so it never covers the line being written. It is not
+   tied to focus: a bar that jumps back to sticky the moment the field loses focus would land under the finger that just
+   tapped a button above it, and could even press Save. */
+.save-wrap.flat { position: static; }
 .save { width: 100%; min-height: 60px; border-radius: 18px; background: var(--plus); color: var(--ink); font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .save.minus { background: var(--minus); }
 
@@ -210,6 +212,22 @@ button.row:active { opacity: .6; }
 .dlg p { margin-top: 6px; font-size: 14px; color: var(--muted); }
 .dlg .dlg-note { margin-top: 14px; padding: 10px 14px; border-radius: 14px; background: var(--bg); white-space: pre-line; overflow-wrap: anywhere; font-size: 15px; line-height: 1.45; color: var(--ink); }
 .dlg-shot { margin-top: 12px; }
+
+/* The in-app camera: the live picture fills the screen, the shutter sits at the bottom */
+.cam { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; color: #fff; }
+.cam[hidden] { display: none; }
+.cam-view { flex: 1; min-height: 0; width: 100%; object-fit: cover; background: #000; }
+.cam-view.mirror { transform: scaleX(-1); }
+.cam-msg { position: absolute; left: 24px; right: 24px; top: 38%; font-size: 16px; line-height: 1.45; text-align: center; color: #fff; }
+.cam-top { position: absolute; top: 0; right: 0; padding: calc(10px + env(safe-area-inset-top, 0px)) 12px 10px; }
+.cam-bar { flex: none; position: relative; display: flex; align-items: center; justify-content: center; gap: 28px; padding: 20px 16px calc(24px + env(safe-area-inset-bottom, 0px)); background: #000; }
+.cam-btn { width: 48px; height: 48px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: rgba(255, 255, 255, .16); color: #fff; }
+.cam-shutter { width: 76px; height: 76px; border-radius: 50%; border: 4px solid #fff; background: rgba(255, 255, 255, .28); box-shadow: inset 0 0 0 4px #000; }
+.cam-shutter:active { background: #fff; }
+.cam-shutter:disabled { opacity: .35; }
+.cam-native { position: absolute; left: 16px; right: 16px; bottom: calc(110px + env(safe-area-inset-bottom, 0px)); min-height: 44px; padding: 0 16px; border-radius: 22px; background: #fff; color: #000; font-size: 15px; font-weight: 700; }
+.cam-native[hidden] { display: none; }
+html.cam-open, html.cam-open body { overflow: hidden; }
 .dlg-shot .shot { --shot-max: 46vh; }
 .dlg-link { margin: 4px 0 -8px -6px; }
 .dlg-actions { margin-top: 20px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.4.2: camera se deschide chiar în aplicație, nu în aplicația de cameră a telefonului, iar ce scrii într-un formular se păstrează dacă pagina este reîncărcată între timp.
 - 0.4.1: pe telefon, poza se poate face și pe loc, cu aparatul foto, nu doar alege din telefon.
 - 0.4: o activitate poate avea o poză, micșorată automat înainte de încărcare și văzută doar la apăsare, de cine vede și activitatea. Cere rularea din nou a scriptului `supabase/schema.sql`.
 - 0.3: o activitate poate avea detalii, câteva rânduri care se văd doar la apăsare. Cere rularea din nou a scriptului `supabase/schema.sql`.
