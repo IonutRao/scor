@@ -180,6 +180,7 @@ select t.ok((select count(*) from public.profiles) = 3, 'numele celor trei utili
 -- ---------------------------------------------------------------- detalii
 select t.be(t.a());
 select t.ok((public.sync()->>'v')::int = 5, 'raspunsul lui sync() poarta versiunea scriptului');
+select t.ok(public.sync()->>'name' = 'Ana', 'si numele afisat');
 select t.ok(
   public.sync(p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(70), 'day', current_date, 'ts', t.ms(now() - interval '5 minutes'), 'type', 'plus', 'pts', 10, 'name', 'Ajutor', 'pub', true,
@@ -342,15 +343,16 @@ select t.ok((select count(*) from storage.objects) = 0, 'dupa curatenie nu mai r
 -- Participarea este la alegere. Ceilalti afla un singur lucru despre un participant: daca ziua lui este pe plus.
 -- Suma zilei cuprinde si activitatile private, dar ele nu ies niciodata la vedere.
 select t.be(t.a());
-select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'v', 5),
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'others', '[]'::jsonb, 'you', false, 'v', 5),
   'la inceput nimeni nu participa, iar raspunsul poarta versiunea scriptului');
 select t.ok(public.pulse(p_day => current_date, p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'Ana intra in joc');
 select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'a doua intrare nu o numara de doua ori');
 -- Ana are azi activitatile de mai sus: e(1) +10 public, e(2) -10 privat, e(4) +20 public, plus altele; ziua ei este pe plus.
 select t.ok((select coalesce(sum(case when type = 'plus' then pts else -pts end), 0) from public.entries where user_id = t.a() and day = current_date) > 0, 'inainte: ziua Anei este pe plus');
-select t.ok(public.pulse()->'up' = jsonb_build_array('Ana'), 'Ana se vede pe lista celor pe plus');
+select t.ok(public.pulse()->'up' = jsonb_build_array('Ana') and public.pulse()->'others' = '[]'::jsonb and public.pulse()->'you' = 'true'::jsonb,
+  'Ana se vede pe lista celor pe plus: pentru ea, ceilalti sunt niciunul, iar you este adevarat');
 select t.be(t.b());
-select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'v', 5),
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', jsonb_build_array('Ana'), 'you', false, 'v', 5),
   'Bogdan, fara sa participe, vede cati participa si cine e pe plus');
 select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 2 and public.pulse()->'up' = jsonb_build_array('Ana'),
   'Bogdan intra: doi participanti, dar fara activitati azi nu este pe plus');
@@ -358,7 +360,8 @@ select t.ok(jsonb_array_length(public.sync(p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(95), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 5, 'name', 'Tigara', 'pub', false),
     jsonb_build_object('id', t.e(96), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Alergare', 'pub', false)))->'entries') >= 2,
   'Bogdan noteaza o activitate pe minus si una pe plus, amandoua private');
-select t.ok(public.pulse()->'up' = jsonb_build_array('Ana', 'Bogdan'), 'ziua lui Bogdan este pe plus (+5), deci apare pe lista, desi activitatile lui sunt private');
+select t.ok(public.pulse()->'up' = jsonb_build_array('Ana', 'Bogdan') and public.pulse()->'others' = jsonb_build_array('Ana') and public.pulse()->'you' = 'true'::jsonb,
+  'ziua lui Bogdan este pe plus (+5), deci apare pe lista, desi activitatile lui sunt private; pentru el ceilalti inseamna Ana');
 select t.ok(jsonb_array_length(public.sync(p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(97), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 10, 'name', 'Prea mult pe telefon', 'pub', false)))->'entries') >= 3,
   'Bogdan mai noteaza un minus');

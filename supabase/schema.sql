@@ -463,7 +463,9 @@ begin
 
   select s.favs into v_favs from public.settings s where s.user_id = v_uid;
 
+  -- Numele afisat vine si el cu starea contului: schimbat de pe alt dispozitiv, ajunge astfel si pe acesta.
   return jsonb_build_object(
+    'name', (select p.name from public.profiles p where p.id = v_uid),
     'entries', coalesce((
       select jsonb_agg(jsonb_build_object(
         'id', e.id, 'day', e.day, 'ts', (extract(epoch from e.ts) * 1000)::bigint,
@@ -549,6 +551,8 @@ declare
   v_day date := coalesce(p_day, current_date);
   v_total integer;
   v_up jsonb;
+  v_others jsonb;
+  v_you boolean;
 begin
   if v_uid is null then
     raise exception 'not_signed_in';
@@ -565,9 +569,15 @@ begin
     delete from public.pulse where user_id = v_uid;
   end if;
   select count(*) into v_total from public.pulse;
-  select coalesce(jsonb_agg(x.name order by lower(x.name)), '[]'::jsonb) into v_up
+  -- up: toti cei pe plus, cu numele; others: la fel, fara cel care intreaba; you: cel care intreaba este printre ei.
+  -- Aplicatia il arata pe cel care intreaba drept "tu", dupa you, nu dupa nume: numele de pe dispozitiv poate fi vechi.
+  select
+    coalesce(jsonb_agg(x.name order by lower(x.name)), '[]'::jsonb),
+    coalesce(jsonb_agg(x.name order by lower(x.name)) filter (where x.user_id <> v_uid), '[]'::jsonb),
+    coalesce(bool_or(x.user_id = v_uid), false)
+    into v_up, v_others, v_you
   from (
-    select p.name
+    select m.user_id, p.name
     from public.pulse m
     join public.profiles p on p.id = m.user_id
     where (
@@ -581,6 +591,8 @@ begin
     'in', exists (select 1 from public.pulse m where m.user_id = v_uid),
     'total', v_total,
     'up', v_up,
+    'others', v_others,
+    'you', v_you,
     'v', 5
   );
 end

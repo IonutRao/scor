@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.5';
+  var VERSION = '0.5.1';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -223,9 +223,9 @@
     d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
     /* Ultimul raspuns al cardului "Azi pe plus", ca sa fie aratat pe loc la deschiderea fluxului. */
-    var pz = d.pulse;
+    var pz = d.pulse, names = function (list) { return Array.isArray(list) ? list.filter(function (n) { return typeof n === 'string'; }).slice(0, 100) : null; };
     d.pulse = pz && typeof pz === 'object' && typeof pz.day === 'string' && Array.isArray(pz.up)
-      ? { day: pz.day, on: !!pz.on, total: pz.total > 0 ? pz.total : 0, up: pz.up.filter(function (n) { return typeof n === 'string'; }).slice(0, 100), at: pz.at > 0 ? pz.at : 0 }
+      ? { day: pz.day, on: !!pz.on, total: pz.total > 0 ? pz.total : 0, up: names(pz.up), others: names(pz.others), you: typeof pz.you === 'boolean' ? pz.you : null, at: pz.at > 0 ? pz.at : 0 }
       : null;
     d.pubDefault = !!d.pubDefault;
     d.entries = d.entries.filter(function (e) { return okItem(e) && /^\d{4}-\d{2}-\d{2}$/.test(e.day) && typeof e.id === 'string'; });
@@ -444,6 +444,8 @@
       else data.favsRev++; /* contul nu are inca favoritele: pleaca la drumul urmator */
     }
     data.sv = Number(res.v) > 0 ? Number(res.v) : 0;
+    /* Numele afisat, schimbat poate de pe alt dispozitiv. */
+    if (typeof res.name === 'string' && res.name && res.name !== data.name) data.name = res.name;
     /* Pozele stiute aici pe care contul nu le mai are la nicio activitate (scoase ori inlocuite de pe alt dispozitiv, sau
        ramase de la o activitate stearsa acolo) nu mai au de ce sa ocupe loc. Se bazeaza pe faptul ca raspunsul aduce
        tot jurnalul; daca sync va aduce candva doar ce s-a schimbat, regula aceasta trebuie regandita. */
@@ -1034,9 +1036,10 @@
     API.rpc('pulse', args).then(function (r) {
       if (seq !== pulseSeq || data.uid !== uid || mine !== session) return;
       if (!r || !Array.isArray(r.up)) throw new Error('bad_response');
+      var names = function (list) { return Array.isArray(list) ? list.filter(function (n) { return typeof n === 'string'; }).slice(0, 100) : null; };
       data.pulse = {
         day: typeof r.day === 'string' ? r.day : args.p_day, on: !!r['in'], total: r.total > 0 ? r.total : 0,
-        up: r.up.filter(function (n) { return typeof n === 'string'; }).slice(0, 100), at: Date.now()
+        up: names(r.up), others: names(r.others), you: typeof r.you === 'boolean' ? r.you : null, at: Date.now()
       };
       persist();
       if (join != null) toast(tr(join ? 'pulseJoined' : 'pulseLeft'));
@@ -1050,20 +1053,28 @@
     });
   }
 
-  /* "Ana, Bogdan și tu": numele celor pe plus, cu numele propriu inlocuit de "tu", la sfarsit. */
-  function pulseNames(up) {
-    var others = up.filter(function (n) { return n !== data.name; }).map(function (n) { return '<b>' + esc(n) + '</b>'; });
-    if (up.length !== others.length) others.push('<b>' + esc(tr('pulseYou')) + '</b>');
-    if (!others.length) return '';
-    if (others.length === 1) return others[0];
-    return others.slice(0, -1).join(', ') + ' ' + esc(tr('pulseAnd')) + ' ' + others[others.length - 1];
+  /* Cei pe plus, impartiti in ceilalti (nume) si "tu". Serverul spune el daca omul este printre ei (you) si ii da pe
+     ceilalti separat (others); un raspuns al unui script mai vechi, fara ele, se descurca dupa nume, fara majuscule si diacritice. */
+  function pulseSplit(pz) {
+    if (pz.others && pz.you != null) return { others: pz.others, you: pz.you };
+    var mine = fold(data.name), others = pz.up.filter(function (n) { return fold(n) !== mine; });
+    return { others: others, you: others.length !== pz.up.length };
+  }
+
+  /* "Ana, Bogdan și tu": numele celor pe plus, cu "tu" la sfarsit. */
+  function pulseNames(pz) {
+    var sp = pulseSplit(pz), list = sp.others.map(function (n) { return '<b>' + esc(n) + '</b>'; });
+    if (sp.you) list.push('<b>' + esc(tr('pulseYou')) + '</b>');
+    if (!list.length) return '';
+    if (list.length === 1) return list[0];
+    return list.slice(0, -1).join(', ') + ' ' + esc(tr('pulseAnd')) + ' ' + list[list.length - 1];
   }
 
   function viewPulse() {
     if (!pulseOn()) return '';
     var pz = pulseToday();
     if (!pz) return '';
-    var names = pulseNames(pz.up), n = pz.up.length;
+    var sp = pulseSplit(pz), names = pulseNames(pz), n = sp.others.length + (sp.you ? 1 : 0);
     var sub = !pz.total ? esc(tr('pulseNobody')) : names || esc(tr('pulseNoneUp'));
     var acts = pz.on
       ? '<button type="button" class="link" data-act="pulse-leave" data-focus="pulse-leave"' + (pulseBusy ? ' disabled' : '') + '>' + esc(tr('pulseLeave')) + '</button>'

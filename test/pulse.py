@@ -103,6 +103,32 @@ try:
         soft(lambda: until(a, lambda: card(a) == ("1 din 1", "tu"), "cardul Anei"), "Ana vede din nou 1 din 1")
         check(db("select count(*) from public.pulse") == "1", "in baza: un singur participant")
 
+        # ------------------------------------------------------------ "tu" nu depinde de numele de pe dispozitiv
+        # Ana isi schimba numele de pe alt dispozitiv. Pe primul, cardul o arata in continuare drept "tu", iar numele nou
+        # ajunge si acolo odata cu starea contului.
+        ctx_a2, a2 = new_page()
+        a2.goto(BASE)
+        a2.wait_for_selector("#auth-btn")
+        a2.fill("#auth-email", "ana@example.test")
+        a2.fill("#auth-pass", "parola-ana-1")
+        a2.click("#auth-btn")
+        a2.wait_for_selector("#score")
+        a2.click('#nav a[data-route="profil"]')
+        a2.click('a[data-route="nume"]')
+        a2.fill("#name-input", "Anda")
+        a2.click("#name-btn")
+        soft(lambda: wait_text(a2, "#my-name", "Anda"), "pe al doilea dispozitiv Ana devine Anda")
+        ctx_a2.close()
+        check(a.evaluate("() => JSON.parse(localStorage.getItem('scor.v1')).name") == "Ana", "primul dispozitiv inca o stie drept Ana")
+        a.click('[data-act="feed-refresh"]')
+        soft(lambda: until(a, lambda: card(a) == ("1 din 1", "tu"), "cardul dupa redenumire"), "cardul o arata tot drept tu, nu dupa numele vechi")
+        a.click('#nav a[data-route="profil"]')
+        a.click('[data-act="sync-now"]')
+        soft(lambda: wait_text(a, "#my-name", "Anda"), "iar numele nou ajunge si pe primul dispozitiv, odata cu starea contului")
+        flux(b)
+        soft(lambda: until(b, lambda: card(b) == ("1 din 1", "Anda"), "cardul lui Bogdan"), "Bogdan vede numele nou")
+        flux(a)
+
         # ------------------------------------------------------------ cardul cunoaste ziua
         a.evaluate("() => { const d = JSON.parse(localStorage.getItem('scor.v1')); d.pulse.day = '2000-01-01'; d.pulse.up = ['Fantoma']; localStorage.setItem('scor.v1', JSON.stringify(d)); }")
         a.reload()
@@ -122,7 +148,7 @@ try:
         shot(a, "g04-jurnal-prima-zi.png")
         # Un jurnal mai lung, scris direct in cont: patru zile notate, trei pe plus, cea mai buna alaltaieri.
         today = datetime.date.today()
-        ana = db("select id from public.profiles where name = 'Ana'")
+        ana = db("select p.id from public.profiles p join auth.users u on u.id = p.id where u.email = 'ana@example.test'")
         rows = []
         for back, pts, kind in ((3, 10, "plus"), (2, 30, "plus"), (1, 5, "minus")):
             day = today - datetime.timedelta(days=back)

@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.5.1: pe cardul „Azi pe plus”, cel care se uită apare drept „tu” după ce spune serverul, nu după numele de pe dispozitiv; numele schimbat pe un dispozitiv ajunge și pe celelalte. Cere rularea din nou a scriptului.
 - 0.5: țelul comun „Azi pe plus” în Flux (cine participă vede câți sunt pe plus azi și cine; participarea e la alegere) și un rând cu rezumatul săptămânii în Jurnal. Cere rularea din nou a scriptului `supabase/schema.sql`.
 - 0.4.2: camera se deschide chiar în aplicație, nu în aplicația de cameră a telefonului, iar ce scrii într-un formular se păstrează dacă pagina este reîncărcată între timp.
 - 0.4.1: pe telefon, poza se poate face și pe loc, cu aparatul foto, nu doar alege din telefon.

@@ -90,7 +90,7 @@ update public.entries set note = 'schimbat direct', photo = null where id = t.e(
 reset role;
 select t.ok((select note || '/' || photo from public.entries where id = t.e(1)) = 'picioare, 45 de minute/' || t.pic(1), 'dupa: detaliile si poza Anei nu pot fi schimbate de Bogdan');
 select t.be(t.a());
-select t.ok(public.pulse(p_join => true) = jsonb_build_object('day', current_date, 'in', true, 'total', 1, 'up', jsonb_build_array('Ana'), 'v', 5),
+select t.ok(public.pulse(p_join => true) = jsonb_build_object('day', current_date, 'in', true, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', '[]'::jsonb, 'you', true, 'v', 5),
   'dupa: Ana intra in "Azi pe plus" si, cu ziua ei veche pe plus, apare pe lista');
 reset role;
 
