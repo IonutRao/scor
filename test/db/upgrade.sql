@@ -1,5 +1,5 @@
 -- Trecerea unei baze create cu scriptul unei versiuni mai vechi la scriptul de acum, cu date deja in ea.
--- Se ruleaza pe o baza pornita cu SCOR_SCHEMA_FILE=test/db/schema-0.3.sql (scriptul versiunii dinainte). Orice FAIL opreste scriptul.
+-- Se ruleaza pe o baza pornita cu SCOR_SCHEMA_FILE=test/db/schema-0.4.sql (scriptul versiunii dinainte). Orice FAIL opreste scriptul.
 
 \set ON_ERROR_STOP on
 set client_min_messages = notice;
@@ -27,7 +27,7 @@ grant execute on all functions in schema t to anon, authenticated;
 insert into auth.users (id, email, encrypted_password) values (t.a(), 'ana@example.test', 'x'), (t.b(), 'bogdan@example.test', 'x');
 select t.be(t.a());
 select public.set_name('Ana');
-select t.ok(coalesce((public.sync()->>'v')::int, 2) < 4, 'inainte: baza este la o versiune mai veche a scriptului');
+select t.ok(coalesce((public.sync()->>'v')::int, 2) < 5, 'inainte: baza este la o versiune mai veche a scriptului');
 select t.ok(jsonb_array_length(public.sync(
   p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(1), 'day', current_date, 'ts', t.ms(now() - interval '2 hours'), 'type', 'plus', 'pts', 10, 'key', 'gym', 'pub', true),
@@ -56,6 +56,7 @@ select t.ok(
     where b.id is null or e.id is null or not (to_jsonb(e) @> b.row)),
   'dupa: toate activitatile sunt la locul lor, cu tot ce aveau');
 select t.ok((select count(*) from public.entries where photo is not null) = 0, 'dupa: nicio activitate veche nu are poza');
+select t.ok((select count(*) from public.pulse) = 0, 'dupa: lista participantilor la "Azi pe plus" exista si este goala');
 select t.ok((select count(*) from public.cheers) = 1 and (select favs->0->>'name' from public.settings) = 'Inot', 'dupa: incurajarile si favoritele au ramas');
 select t.ok((select count(*) from storage.buckets where id = 'photos' and not public) = 1, 'dupa: locul pentru poze exista si este privat');
 
@@ -71,7 +72,7 @@ select t.ok(
   'dupa: apelul versiunii 0.3, cu detalii, merge la fel si pastreaza incurajarea');
 select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(2), 'pub', true)))->'entries' @> jsonb_build_array(jsonb_build_object('id', t.e(2), 'pub', true, 'cheers', 0)),
   'dupa: schimbarea de vizibilitate trimisa de o aplicatie veche merge');
-select t.ok((public.sync()->>'v')::int = 4, 'dupa: raspunsul poarta versiunea scriptului');
+select t.ok((public.sync()->>'v')::int = 5, 'dupa: raspunsul poarta versiunea scriptului');
 
 -- Ce aduce versiunea noua.
 insert into storage.objects (bucket_id, name, owner_id) values ('photos', t.a()::text || '/' || t.pic(1), t.a()::text);
@@ -88,5 +89,9 @@ select t.ok(public.sync(p_photo => jsonb_build_array(jsonb_build_object('id', t.
 update public.entries set note = 'schimbat direct', photo = null where id = t.e(1);
 reset role;
 select t.ok((select note || '/' || photo from public.entries where id = t.e(1)) = 'picioare, 45 de minute/' || t.pic(1), 'dupa: detaliile si poza Anei nu pot fi schimbate de Bogdan');
+select t.be(t.a());
+select t.ok(public.pulse(p_join => true) = jsonb_build_object('day', current_date, 'in', true, 'total', 1, 'up', jsonb_build_array('Ana'), 'v', 5),
+  'dupa: Ana intra in "Azi pe plus" si, cu ziua ei veche pe plus, apare pe lista');
+reset role;
 
 \warn TRECERE: toate verificarile au trecut

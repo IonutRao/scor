@@ -1,11 +1,11 @@
--- Scorul zilei: baza de date (versiunea 0.4: activitatile pot avea detalii si o poza)
+-- Scorul zilei: baza de date (versiunea 0.5: telul comun "Azi pe plus")
 --
 -- Se lipeste in Supabase, la SQL Editor, si se apasa Run.
 -- Poate fi rulat din nou oricand: nu sterge si nu modifica datele existente.
 -- Aduce la zi si o baza creata cu o versiune mai veche a acestui script.
 --
 -- Ce contine:
---   1. tabelele: profiles, settings, entries, cheers
+--   1. tabelele: profiles, settings, entries, cheers, pulse
 --   2. cine ce are voie sa vada si sa schimbe (drepturi si reguli pe randuri)
 --   3. numaratoarea incurajarilor
 --   4. locul in care se pastreaza pozele si cine le poate vedea
@@ -106,6 +106,13 @@ create table if not exists public.cheers (
 );
 create index if not exists cheers_user on public.cheers (user_id);
 
+-- Telul comun "Azi pe plus" (din versiunea 0.5): cine a ales sa participe. Participarea inseamna un singur lucru la vedere
+-- pentru ceilalti: daca ziua celui care participa este pe plus. Nimic altceva din ce are privat nu se vede.
+create table if not exists public.pulse (
+  user_id uuid primary key references public.profiles (id) on delete cascade,
+  since timestamptz not null default now()
+);
+
 
 -- 2. DREPTURI SI REGULI -----------------------------------------------------
 
@@ -113,10 +120,13 @@ alter table public.profiles enable row level security;
 alter table public.settings enable row level security;
 alter table public.entries enable row level security;
 alter table public.cheers enable row level security;
+alter table public.pulse enable row level security;
 
 -- Se porneste de la zero drepturi si se da inapoi doar strictul necesar.
 -- Vizitatorii neautentificati (anon) nu primesc nimic.
 revoke all on public.profiles, public.settings, public.entries, public.cheers from public, anon, authenticated;
+-- Lista participantilor la "Azi pe plus" nu se citeste si nu se scrie direct: doar prin functia pulse de mai jos.
+revoke all on public.pulse from public, anon, authenticated;
 
 grant select on public.profiles to authenticated;
 grant insert (id, name) on public.profiles to authenticated;
@@ -465,7 +475,7 @@ begin
     'favs', v_favs,
     'rejected', v_rejected,
     'now', (extract(epoch from now()) * 1000)::bigint,
-    'v', 4
+    'v', 5
   );
 end
 $$;
@@ -526,6 +536,56 @@ end
 $$;
 
 -- Sterge definitiv contul celui care o apeleaza, impreuna cu toate datele lui.
+-- Telul comun "Azi pe plus": cati participa si cine dintre ei are ziua pe plus. p_day este ziua de pe dispozitivul
+-- celui care intreaba (ziua lui locala); una prea departata de azi este adusa la azi. Cu p_join true omul intra,
+-- cu false iese; fara p_join doar se uita.
+-- Functia ruleaza cu drepturile proprietarului bazei (security definer), fiindca aduna si activitatile private ale
+-- participantilor; din ele nu iese decat un singur lucru, daca suma zilei este peste zero, si numai pentru cei care
+-- au ales sa participe. Numele participantilor sunt oricum la vedere in flux.
+create or replace function public.pulse(p_day date default null, p_join boolean default null) returns jsonb
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_uid uuid := auth.uid();
+  v_day date := coalesce(p_day, current_date);
+  v_total integer;
+  v_up jsonb;
+begin
+  if v_uid is null then
+    raise exception 'not_signed_in';
+  end if;
+  if not exists (select 1 from public.profiles p where p.id = v_uid) then
+    raise exception 'no_profile';
+  end if;
+  if v_day < current_date - 1 or v_day > current_date + 1 then
+    v_day := current_date;
+  end if;
+  if p_join is true then
+    insert into public.pulse (user_id) values (v_uid) on conflict (user_id) do nothing;
+  elsif p_join is false then
+    delete from public.pulse where user_id = v_uid;
+  end if;
+  select count(*) into v_total from public.pulse;
+  select coalesce(jsonb_agg(x.name order by lower(x.name)), '[]'::jsonb) into v_up
+  from (
+    select p.name
+    from public.pulse m
+    join public.profiles p on p.id = m.user_id
+    where (
+      select coalesce(sum(case when e.type = 'plus' then e.pts else -e.pts end), 0)
+      from public.entries e where e.user_id = m.user_id and e.day = v_day
+    ) > 0
+    limit 100
+  ) x;
+  return jsonb_build_object(
+    'day', v_day,
+    'in', exists (select 1 from public.pulse m where m.user_id = v_uid),
+    'total', v_total,
+    'up', v_up,
+    'v', 5
+  );
+end
+$$;
+
 create or replace function public.delete_my_account() returns jsonb
 language plpgsql security definer set search_path = '' as $$
 declare
@@ -547,6 +607,7 @@ revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, json
 revoke all on function public.feed(text, bigint, integer) from public, anon;
 revoke all on function public.cheer(uuid, boolean) from public, anon;
 revoke all on function public.delete_my_account() from public, anon;
+revoke all on function public.pulse(date, boolean) from public, anon;
 revoke all on function public.tg_cheers_count() from public, anon, authenticated;
 revoke all on function public.tg_entries_clamp() from public, anon, authenticated;
 
@@ -557,6 +618,7 @@ grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, j
 grant execute on function public.feed(text, bigint, integer) to authenticated;
 grant execute on function public.cheer(uuid, boolean) to authenticated;
 grant execute on function public.delete_my_account() to authenticated;
+grant execute on function public.pulse(date, boolean) to authenticated;
 
 
 -- Anunta serviciul care expune functiile ca s-au schimbat.

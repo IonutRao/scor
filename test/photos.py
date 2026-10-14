@@ -317,8 +317,9 @@ try:
             if lost:
                 return route.abort()
             if "p_photo" in body:
-                lost.append(body["p_photo"])
+                # Serverul primeste cererea si o aplica; abia apoi raspunsul este pierdut.
                 route.fetch()
+                lost.append(body["p_photo"])
                 return route.abort()
             route.continue_()
 
@@ -370,8 +371,8 @@ try:
             if lost:
                 return route.abort()
             if any(e.get("name") == "Oglinda curata" for e in body.get("p_add", [])):
-                lost.append(1)
                 route.fetch()
+                lost.append(1)
                 return route.abort()
             route.continue_()
 

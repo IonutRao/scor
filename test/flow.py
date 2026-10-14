@@ -1,4 +1,5 @@
 """Parcurge aplicatia ca un utilizator, pe ecran de telefon, si verifica ce se vede."""
+import datetime
 import pathlib
 import sys
 
@@ -256,7 +257,12 @@ with sync_playwright() as p:
     check(text(page, "#score") == "+10", "data survives a reload")
 
     # --- istoric pe mai multe zile ---
+    page.click('#nav a[data-route="jurnal"]')
+    check(text(page, "#week-line") == "prima zi, și e pe plus", "on the first day the week line only says whether today is on plus, got " + text(page, "#week-line"))
+    page.click('#nav a[data-route="azi"]')
     page.evaluate(SEED)
+    # Dupa o schimbare de ecran browserul isi cere din nou iconita; o reincarcare imediata ar intrerupe cererea.
+    page.wait_for_timeout(500)
     page.reload()
     page.wait_for_selector("#score")
     check(text(page, "#streak") == "6 zile", "streak of 6 days, got " + text(page, "#streak"))
@@ -269,6 +275,9 @@ with sync_playwright() as p:
     check(text(page, "h1") == "Jurnal", "journal opens")
     check(text(page, "#week-total") == "+125", "journal total +125")
     check("serie de 6 zile" in text(page, "#week-streak"), "journal streak text")
+    best_day = ["duminică", "luni", "marți", "miercuri", "joi", "vineri", "sâmbătă"][(datetime.date.today() - datetime.timedelta(days=4)).isoweekday() % 7]
+    check(text(page, "#week-line") == "6 din 7 zile pe plus · cea mai bună zi: %s, +30" % best_day,
+          "the week line counts the days on plus and names the best one, got " + text(page, "#week-line"))
     check(page.locator(".bar").count() == 7, "seven bars")
     check(page.locator(".bar.neg").count() == 1, "one negative bar")
     check(page.locator("#day-list > li").count() == 15, "15 days listed, got %d" % page.locator("#day-list > li").count())

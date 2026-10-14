@@ -63,6 +63,8 @@ h1:focus { outline: none; }
 .hero-streak { font-size: 14px; font-weight: 700; color: var(--hero-muted); }
 .hero-streak.on { color: var(--gold); }
 .hero-streak svg { vertical-align: -2px; margin-right: 5px; fill: currentColor; }
+.hero-line { margin-top: 14px; font-size: 13px; font-weight: 600; color: var(--hero-muted); }
+.hero-line b { color: var(--hero-ink); font-weight: 700; }
 
 /* Seven-day chart */
 .chart { margin-top: 20px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: end; height: 146px; }

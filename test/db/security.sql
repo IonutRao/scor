@@ -179,7 +179,7 @@ select t.ok((select count(*) from public.profiles) = 3, 'numele celor trei utili
 
 -- ---------------------------------------------------------------- detalii
 select t.be(t.a());
-select t.ok((public.sync()->>'v')::int = 4, 'raspunsul lui sync() poarta versiunea scriptului');
+select t.ok((public.sync()->>'v')::int = 5, 'raspunsul lui sync() poarta versiunea scriptului');
 select t.ok(
   public.sync(p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(70), 'day', current_date, 'ts', t.ms(now() - interval '5 minutes'), 'type', 'plus', 'pts', 10, 'name', 'Ajutor', 'pub', true,
@@ -338,6 +338,46 @@ select set_config('storage.allow_delete_query', 'false', false);
 reset role;
 select t.ok((select count(*) from storage.objects) = 0, 'dupa curatenie nu mai ramane nicio poza');
 
+-- ---------------------------------------------------------------- telul comun "Azi pe plus"
+-- Participarea este la alegere. Ceilalti afla un singur lucru despre un participant: daca ziua lui este pe plus.
+-- Suma zilei cuprinde si activitatile private, dar ele nu ies niciodata la vedere.
+select t.be(t.a());
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'v', 5),
+  'la inceput nimeni nu participa, iar raspunsul poarta versiunea scriptului');
+select t.ok(public.pulse(p_day => current_date, p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'Ana intra in joc');
+select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'a doua intrare nu o numara de doua ori');
+-- Ana are azi activitatile de mai sus: e(1) +10 public, e(2) -10 privat, e(4) +20 public, plus altele; ziua ei este pe plus.
+select t.ok((select coalesce(sum(case when type = 'plus' then pts else -pts end), 0) from public.entries where user_id = t.a() and day = current_date) > 0, 'inainte: ziua Anei este pe plus');
+select t.ok(public.pulse()->'up' = jsonb_build_array('Ana'), 'Ana se vede pe lista celor pe plus');
+select t.be(t.b());
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'v', 5),
+  'Bogdan, fara sa participe, vede cati participa si cine e pe plus');
+select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 2 and public.pulse()->'up' = jsonb_build_array('Ana'),
+  'Bogdan intra: doi participanti, dar fara activitati azi nu este pe plus');
+select t.ok(jsonb_array_length(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(95), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 5, 'name', 'Tigara', 'pub', false),
+    jsonb_build_object('id', t.e(96), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Alergare', 'pub', false)))->'entries') >= 2,
+  'Bogdan noteaza o activitate pe minus si una pe plus, amandoua private');
+select t.ok(public.pulse()->'up' = jsonb_build_array('Ana', 'Bogdan'), 'ziua lui Bogdan este pe plus (+5), deci apare pe lista, desi activitatile lui sunt private');
+select t.ok(jsonb_array_length(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(97), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 10, 'name', 'Prea mult pe telefon', 'pub', false)))->'entries') >= 3,
+  'Bogdan mai noteaza un minus');
+select t.ok(public.pulse()->'up' = jsonb_build_array('Ana'), 'ziua lui a ajuns pe minus (-5): nu mai apare pe lista, iar nimic altceva nu se afla despre ea');
+select t.ok(public.pulse(p_day => current_date - 1)->'up' = '[]'::jsonb, 'pentru ieri nimeni nu este pe plus');
+select t.ok((public.pulse(p_day => current_date - 40)->>'day')::date = current_date, 'o zi prea departata este adusa la azi');
+select t.ok(public.pulse(p_join => false)->'in' = 'false'::jsonb and (public.pulse()->>'total')::int = 1, 'Bogdan iese din joc');
+select t.ok(public.pulse(p_join => false)->'in' = 'false'::jsonb and (public.pulse()->>'total')::int = 1, 'o a doua iesire nu schimba nimic');
+select t.fails($$select * from public.pulse$$, '42501', 'lista participantilor nu poate fi citita direct');
+select t.fails($$insert into public.pulse (user_id) values (t.b())$$, '42501', 'nici scrisa direct');
+select t.fails($$delete from public.pulse$$, '42501', 'nici golita direct');
+select t.be(t.a());
+select t.ok((select count(*) from public.entries where user_id = t.b()) = 0, 'Ana tot nu vede activitatile private ale lui Bogdan');
+select t.be_anon();
+select t.fails($$select public.pulse()$$, '42501', 'neautentificat: functia nu poate fi apelata');
+select t.be(t.b());
+select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(95), t.e(96), t.e(97)))->'entries') >= 0, 'Bogdan isi sterge activitatile de proba');
+reset role;
+
 -- ---------------------------------------------------------------- stergerea contului
 select t.be(t.a());
 select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(1), 'pub', true)))->'entries' @> jsonb_build_array(jsonb_build_object('id', t.e(1), 'cheers', 1)), 'incurajarea lui Carmen a ramas pe activitatea Anei');
@@ -347,12 +387,14 @@ select t.ok(jsonb_array_length(public.sync(p_add => jsonb_build_array(
 select t.be(t.b());
 select t.ok((public.cheer(t.e(60))->>'cheers')::int = 1, 'Bogdan o incurajeaza');
 select t.be(t.c());
+select t.ok(public.pulse(p_join => true)->'up' = jsonb_build_array('Ana', 'Carmen'), 'Carmen participa la "Azi pe plus" si este pe plus');
 select t.ok(public.delete_my_account() = '{"ok": true}'::jsonb, 'Carmen isi sterge contul');
 reset role;
 select t.ok((select count(*) from auth.users where id = t.c()) = 0, 'contul lui Carmen nu mai exista');
 select t.ok((select count(*) from public.profiles where id = t.c()) = 0, 'profilul lui Carmen a disparut');
 select t.ok((select count(*) from public.entries where user_id = t.c()) = 0, 'activitatile lui Carmen au disparut');
 select t.ok((select count(*) from public.cheers) = 0, 'incurajarile date si primite de Carmen au disparut');
+select t.ok((select count(*) from public.pulse where user_id = t.c()) = 0 and (select count(*) from public.pulse) = 1, 'participarea lui Carmen la "Azi pe plus" a disparut, a Anei a ramas');
 select t.ok((select cheers_count from public.entries where id = t.e(1)) = 0, 'activitatea Anei nu mai numara incurajarea lui Carmen');
 select t.ok((select count(*) from auth.users) = 2 and (select count(*) from public.entries where user_id = t.a()) = 4, 'conturile si datele celorlalti au ramas neatinse');
 select t.fails($$select public.tg_cheers_count()$$, '0A000', 'functia interna de numarare nu poate fi apelata direct');

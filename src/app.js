@@ -5,18 +5,20 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.4.2';
+  var VERSION = '0.5';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
   var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume'] : ['plus', 'minus', 'detalii']);
-  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, respectiv poze. */
-  var NOTES_FROM = 3, PHOTOS_FROM = 4;
+  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, respectiv telul comun. */
+  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
      si la cat timp se improspateaza singur cat e pe ecran. */
   var FEED_PAGE = 30, FEED_MAX = 50;
   var FEED_EVERY = Math.max(500, Number(CFG.feedEvery) || 15000);
+  /* Cardul "Azi pe plus" se improspateaza mai rar decat fluxul. */
+  var PULSE_EVERY = Math.max(4000, FEED_EVERY * 4);
   var FLAME = 'M12 2.6c1 4.5 6.25 7 6.25 13.1a6.25 6.25 0 0 1-12.5 0c0-2.4 1-4.2 2.4-5.6.2 1.7 1.1 2.9 2.2 3.4C9.7 9.7 10.6 5.8 12 2.6z';
   var STAR = 'M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z';
 
@@ -76,6 +78,8 @@
   /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
      shownFeed tine minte ce flux este desenat acum, ca improspatarea sa nu redeseneze degeaba. */
   var feedSeq = 0, shownFeed = '';
+  /* Cardul "Azi pe plus": o cerere pe drum, numarul ei (un raspuns vechi nu mai conteaza) si cand s-a incercat ultima data. */
+  var pulseBusy = false, pulseSeq = 0, pulseTried = 0;
   var feed = newFeed();
   var openDays = {};
   var appEl, viewEl, navEl, toastEl, dlg;
@@ -181,7 +185,7 @@
     return {
       v: 2, lang: null, demo: false, uid: null, name: '', email: '', entries: [], favs: defaultFavs(),
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
-      lastSync: 0, pubDefault: false, sv: 0
+      lastSync: 0, pubDefault: false, sv: 0, pulse: null
     };
   }
 
@@ -218,6 +222,11 @@
     d.uploads = (Array.isArray(d.uploads) ? d.uploads : []).filter(okName);
     d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
+    /* Ultimul raspuns al cardului "Azi pe plus", ca sa fie aratat pe loc la deschiderea fluxului. */
+    var pz = d.pulse;
+    d.pulse = pz && typeof pz === 'object' && typeof pz.day === 'string' && Array.isArray(pz.up)
+      ? { day: pz.day, on: !!pz.on, total: pz.total > 0 ? pz.total : 0, up: pz.up.filter(function (n) { return typeof n === 'string'; }).slice(0, 100), at: pz.at > 0 ? pz.at : 0 }
+      : null;
     d.pubDefault = !!d.pubDefault;
     d.entries = d.entries.filter(function (e) { return okItem(e) && /^\d{4}-\d{2}-\d{2}$/.test(e.day) && typeof e.id === 'string'; });
     d.entries.forEach(function (e) {
@@ -281,6 +290,8 @@
   function notesOn() { return !BACKEND || data.sv >= NOTES_FROM; }
   /* Pozele stau in cont, deci exista doar cu cont si cu baza de date adusa la versiunea care le cunoaste. */
   function photosOn() { return BACKEND && data.sv >= PHOTOS_FROM; }
+  /* Telul comun "Azi pe plus" cere si el baza de date adusa la versiunea care il cunoaste. */
+  function pulseOn() { return BACKEND && data.sv >= PULSE_FROM; }
 
   /* ---------- salvarea in cont ---------- */
 
@@ -356,6 +367,7 @@
       /* Ce tocmai a plecat poate schimba fluxul: se reincarca acum sau la urmatoarea deschidere. */
       if (batch.length || sent.del.length || sent.vis.length || sent.note.length || sent.photo.length) {
         feed.at = 0;
+        if (data.pulse && (batch.length || sent.del.length)) data.pulse.at = 0;
         if (route === 'flux') openFeed();
       }
       /* Contul e la zi: pot pleca pozele care asteapta si se pot sterge cele ramase fara activitate.
@@ -998,7 +1010,71 @@
   function openFeed() {
     if (!feed.ready) loadFeed(true);
     else if (Date.now() - feed.at > 4000) refreshFeed();
+    if (pulseOn() && Date.now() - pulseAt() > 4000) loadPulse(null);
     if (Date.now() - data.lastSync > 30000) queueSync(0);
+  }
+
+  /* ---------- telul comun "Azi pe plus" ---------- */
+
+  function pulseAt() { return data.pulse ? data.pulse.at : 0; }
+
+  /* Cardul se arata din ultimul raspuns pastrat, daca este pentru ziua de azi. */
+  function pulseToday() {
+    return data.pulse && data.pulse.day === L.dayKey(new Date()) ? data.pulse : null;
+  }
+
+  /* Aduce starea telului comun; cu join true omul intra, cu false iese. Un raspuns vechi, sosit dupa altul mai nou, nu conteaza. */
+  function loadPulse(join) {
+    if (!pulseOn() || auth !== 'in') return;
+    if (pulseBusy && join == null) return;
+    var seq = ++pulseSeq, uid = data.uid, mine = session, args = { p_day: L.dayKey(new Date()) };
+    if (join != null) args.p_join = !!join;
+    pulseBusy = true;
+    pulseTried = Date.now();
+    API.rpc('pulse', args).then(function (r) {
+      if (seq !== pulseSeq || data.uid !== uid || mine !== session) return;
+      if (!r || !Array.isArray(r.up)) throw new Error('bad_response');
+      data.pulse = {
+        day: typeof r.day === 'string' ? r.day : args.p_day, on: !!r['in'], total: r.total > 0 ? r.total : 0,
+        up: r.up.filter(function (n) { return typeof n === 'string'; }).slice(0, 100), at: Date.now()
+      };
+      persist();
+      if (join != null) toast(tr(join ? 'pulseJoined' : 'pulseLeft'));
+    }, function (err) {
+      if (seq !== pulseSeq || data.uid !== uid || mine !== session) return;
+      if (join != null) toast(tr(err.offline ? 'errOffline' : 'errGeneric'));
+    }).then(function () {
+      if (seq !== pulseSeq) return;
+      pulseBusy = false;
+      if (route === 'flux' && auth === 'in') showFeed();
+    });
+  }
+
+  /* "Ana, Bogdan și tu": numele celor pe plus, cu numele propriu inlocuit de "tu", la sfarsit. */
+  function pulseNames(up) {
+    var others = up.filter(function (n) { return n !== data.name; }).map(function (n) { return '<b>' + esc(n) + '</b>'; });
+    if (up.length !== others.length) others.push('<b>' + esc(tr('pulseYou')) + '</b>');
+    if (!others.length) return '';
+    if (others.length === 1) return others[0];
+    return others.slice(0, -1).join(', ') + ' ' + esc(tr('pulseAnd')) + ' ' + others[others.length - 1];
+  }
+
+  function viewPulse() {
+    if (!pulseOn()) return '';
+    var pz = pulseToday();
+    if (!pz) return '';
+    var names = pulseNames(pz.up), n = pz.up.length;
+    var sub = !pz.total ? esc(tr('pulseNobody')) : names || esc(tr('pulseNoneUp'));
+    var acts = pz.on
+      ? '<button type="button" class="link" data-act="pulse-leave" data-focus="pulse-leave"' + (pulseBusy ? ' disabled' : '') + '>' + esc(tr('pulseLeave')) + '</button>'
+      : '<button type="button" class="pulse-join" data-act="pulse-join" data-focus="pulse-join"' + (pulseBusy ? ' disabled' : '') + '>' + esc(tr('pulseJoin')) + '</button>';
+    return '<section class="pulse" id="pulse" aria-label="' + esc(tr('pulseTitle')) + '">' +
+      '<div class="pulse-top"><div class="pulse-t">' + esc(tr('pulseTitle')) + '</div>' +
+        '<div class="pulse-n' + (n ? '' : ' zero') + '" id="pulse-n">' + esc(pz.total ? tr('pulseOf', { n: n, m: pz.total }) : '0') + '</div></div>' +
+      '<p class="pulse-s" id="pulse-s">' + sub + '</p>' +
+      (pz.on ? '' : '<p class="pulse-s">' + esc(tr('pulseWhy')) + '</p>') +
+      '<div class="pulse-acts">' + acts + '</div>' +
+      '</section>';
   }
 
   /* Cat timp ecranul Flux este deschis si la vedere, se improspateaza singur. Dupa incercari nereusite asteapta tot mai mult. */
@@ -1011,6 +1087,8 @@
       return;
     }
     if (now - Math.max(feed.at, feed.tried) >= wait) refreshFeed();
+    /* Cardul "Azi pe plus", mai rar decat fluxul. */
+    if (pulseOn() && !pulseBusy && now - Math.max(pulseAt(), pulseTried) >= PULSE_EVERY * Math.min(8, Math.pow(2, feed.fails))) loadPulse(null);
     /* Incurajarile primite la activitati care nu mai sunt in flux vin cu starea contului, mai rar. */
     if (!syncErr && !syncing && now - data.lastSync > 60000) queueSync(0);
   }
@@ -1478,6 +1556,24 @@
       '</div>';
   }
 
+  /* Rezumatul saptamanii, sub grafic: cate zile din cele notate pana acum au fost pe plus si care a fost cea mai buna.
+     Zilele dinaintea primei notari nu se numara: unui om care a inceput alaltaieri nu i se spune "2 din 7". */
+  function weekLine(days, vals, keys, today) {
+    if (!keys.length) return '';
+    var first = keys[keys.length - 1], from = 0;
+    while (from < days.length - 1 && days[from] < first) from++;
+    var n = 0, m = days.length - from, best = -1;
+    for (var i = from; i < days.length; i++) {
+      if (vals[i] > 0) n++;
+      if (vals[i] > 0 && (best < 0 || vals[i] > vals[best])) best = i;
+    }
+    var bestText = best < 0 ? '' : tr('weekBest', {
+      d: days[best] === today ? tr('today').toLowerCase() : tr('days')[L.parseDay(days[best]).getDay()], v: L.fmt(vals[best])
+    });
+    if (m === 1) return '<b>' + esc(tr(n ? 'weekTodayUp' : 'weekTodayNot')) + '</b>';
+    return '<b>' + esc(tr('weekOf', { n: n, m: m })) + '</b> · ' + esc(n ? bestText : tr('weekNoPlus'));
+  }
+
   function mixText(p, m) {
     if (p + m === 1) return tr(p ? 'onePlus' : 'oneMinus');
     return m === 0 ? tr('allPlus') : p === 0 ? tr('allMinus') : tr('mix', { p: p, m: m });
@@ -1506,6 +1602,7 @@
       var short = tr('daysShort')[L.parseDay(k).getDay()];
       return k === today ? '<div class="is-today">' + esc(tr('todayShort') || short) + '</div>' : '<div>' + esc(short) + '</div>';
     }).join('');
+    var line = weekLine(days, vals, keys, today);
     var rows = keys.map(function (k) {
       var list = byDay[k].slice().sort(function (a, b) { return b.ts - a.ts; });
       var p = list.filter(function (e) { return e.type === 'plus'; }).length, m = list.length - p;
@@ -1527,6 +1624,7 @@
         '</div>' +
         '<div class="chart" role="img" aria-label="' + esc(aria) + '">' + cols + '</div>' +
         '<div class="days" aria-hidden="true">' + labels + '</div>' +
+        (line ? '<p class="hero-line" id="week-line">' + line + '</p>' : '') +
       '</section>' +
       '<section class="sect"><h2>' + esc(tr('byDay')) + '</h2>' +
         (keys.length
@@ -1581,6 +1679,7 @@
       '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('feed')) + '</h1><p class="head-sub">' + esc(tr('feedSub')) + '</p></header>' +
       '<section class="gold" aria-label="' + esc(tr('cheersGot')) + '"><div><div class="gold-t">' + esc(tr('cheersGot')) + '</div><div class="gold-s">' + esc(tr('cheersGotSub')) + '</div></div>' +
         '<div class="gold-n" id="cheers-got">' + ICON.starFlat + myCheers() + '</div></section>' +
+      viewPulse() +
       '<div class="feed-bar">' +
         '<div class="seg small" role="group" aria-label="' + esc(tr('feedLang')) + '">' +
           '<button type="button" class="seg-b" aria-pressed="' + !feed.all + '" data-act="feed-lang" data-all="0" data-focus="fl-0">' + esc(tr('myLang')) + '</button>' +
@@ -2175,8 +2274,12 @@
       feed = newFeed();
       feed.all = all;
       loadFeed(true);
+    } else if (act === 'pulse-join' || act === 'pulse-leave') {
+      loadPulse(act === 'pulse-join');
+      showFeed();
     } else if (act === 'feed-refresh') {
       loadFeed(true);
+      if (pulseOn()) loadPulse(null);
       queueSync(0);
     } else if (act === 'feed-more') {
       loadFeed(false);

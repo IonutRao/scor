@@ -82,6 +82,8 @@ h1:focus { outline: none; }
 .hero-streak { font-size: 14px; font-weight: 700; color: var(--hero-muted); }
 .hero-streak.on { color: var(--gold); }
 .hero-streak svg { vertical-align: -2px; margin-right: 5px; fill: currentColor; }
+.hero-line { margin-top: 14px; font-size: 13px; font-weight: 600; color: var(--hero-muted); }
+.hero-line b { color: var(--hero-ink); font-weight: 700; }
 
 /* Seven-day chart */
 .chart { margin-top: 20px; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; align-items: end; height: 146px; }
@@ -311,6 +313,19 @@ html.cam-open, html.cam-open body { overflow: hidden; }
 .gold-n { flex: none; display: flex; align-items: center; gap: 6px; font: 800 28px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .gold-n svg { fill: currentColor; }
 
+/* The shared goal "On plus today": one compact card, a count and the first names of those on plus */
+.pulse { margin-top: 12px; padding: 16px 20px; border-radius: 24px; background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+.pulse-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.pulse-t { font-size: 15px; font-weight: 700; }
+.pulse-n { flex: none; font: 800 28px/1 var(--font-display); font-variant-numeric: tabular-nums; color: var(--plus-text); }
+.pulse-n.zero { color: var(--muted); }
+.pulse-s { margin-top: 6px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.pulse-s b { font-weight: 700; color: var(--ink); }
+.pulse-acts { margin-top: 8px; display: flex; align-items: center; gap: 12px; }
+.pulse-join { min-height: 40px; padding: 0 18px; border-radius: 20px; background: var(--ink); color: var(--on-ink); font-size: 14px; font-weight: 700; }
+.pulse-join:disabled { opacity: .6; }
+.pulse-acts .link { min-height: 40px; }
+
 /* Feed */
 .feed-bar { margin-top: 14px; padding-inline: 8px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; }
 .feed-bar .link { margin-left: auto; }
@@ -512,6 +527,11 @@ var T = {
     syncProblem: 'Salvarea nu a reușit. Se reîncearcă automat.', syncNow: 'Trimite acum',
     pendingNote: 'În așteptare: {x}. Se salvează în cont când revine internetul.',
     feedSub: 'ce fac ceilalți', cheersGot: 'Încurajări primite de tine', cheersGotSub: 'se numără separat, nu intră în scor',
+    pulseTitle: 'Azi pe plus', pulseOf: '{n} din {m}', pulseNobody: 'Nimeni nu participă încă. Fii primul.', pulseNoneUp: 'Încă nimeni.',
+    pulseJoin: 'Particip', pulseLeave: 'Mă retrag', pulseYou: 'tu', pulseAnd: 'și',
+    pulseWhy: 'Un țel comun: toți pe plus la finalul zilei. Despre tine se vede un singur lucru, dacă ești pe plus azi.',
+    pulseJoined: 'Participi la „Azi pe plus”', pulseLeft: 'Nu mai participi',
+    weekOf: '{n} din {m} zile pe plus', weekTodayUp: 'prima zi, și e pe plus', weekTodayNot: 'prima zi, încă nu e pe plus', weekBest: 'cea mai bună zi: {d}, {v}', weekNoPlus: 'nicio zi pe plus încă',
     feedLang: 'Limba activităților', myLang: 'Limba mea', allLangs: 'Toate limbile',
     refresh: 'Actualizează', moreFeed: 'Mai multe', loading: 'Se încarcă...',
     feedEmpty: 'Încă nu a apărut nimic aici.', feedEmptyHint: 'Arată în flux o faptă bună și va fi prima.',
@@ -595,6 +615,11 @@ var T = {
     syncProblem: 'Saving failed. It will retry automatically.', syncNow: 'Send now',
     pendingNote: 'Waiting: {x}. Sending resumes once the internet is back.',
     feedSub: 'what others are doing', cheersGot: 'Cheers you received', cheersGotSub: 'counted separately, not part of your score',
+    pulseTitle: 'On plus today', pulseOf: '{n} of {m}', pulseNobody: 'Nobody is in yet. Be the first.', pulseNoneUp: 'Nobody yet.',
+    pulseJoin: 'Count me in', pulseLeave: 'Leave', pulseYou: 'you', pulseAnd: 'and',
+    pulseWhy: 'A shared goal: everyone on plus by the end of the day. Only one thing about you is shown, whether you are on plus today.',
+    pulseJoined: 'You are in “On plus today”', pulseLeft: 'You left',
+    weekOf: '{n} of {m} days on plus', weekTodayUp: 'first day, and it is on plus', weekTodayNot: 'first day, not on plus yet', weekBest: 'best day: {d}, {v}', weekNoPlus: 'no day on plus yet',
     feedLang: 'Activity language', myLang: 'My language', allLangs: 'All languages',
     refresh: 'Refresh', moreFeed: 'More', loading: 'Loading...',
     feedEmpty: 'Nothing here yet.', feedEmptyHint: 'Show a good deed in the feed and it will be the first.',
@@ -1187,18 +1212,20 @@ var CAM = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.4.2';
+  var VERSION = '0.5';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
   var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume'] : ['plus', 'minus', 'detalii']);
-  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, respectiv poze. */
-  var NOTES_FROM = 3, PHOTOS_FROM = 4;
+  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, respectiv telul comun. */
+  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
      si la cat timp se improspateaza singur cat e pe ecran. */
   var FEED_PAGE = 30, FEED_MAX = 50;
   var FEED_EVERY = Math.max(500, Number(CFG.feedEvery) || 15000);
+  /* Cardul "Azi pe plus" se improspateaza mai rar decat fluxul. */
+  var PULSE_EVERY = Math.max(4000, FEED_EVERY * 4);
   var FLAME = 'M12 2.6c1 4.5 6.25 7 6.25 13.1a6.25 6.25 0 0 1-12.5 0c0-2.4 1-4.2 2.4-5.6.2 1.7 1.1 2.9 2.2 3.4C9.7 9.7 10.6 5.8 12 2.6z';
   var STAR = 'M12 3l2.7 5.6 6.1.8-4.5 4.3 1.1 6.1L12 16.9 6.6 19.8l1.1-6.1L3.2 9.4l6.1-.8z';
 
@@ -1258,6 +1285,8 @@ var CAM = (function () {
   /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
      shownFeed tine minte ce flux este desenat acum, ca improspatarea sa nu redeseneze degeaba. */
   var feedSeq = 0, shownFeed = '';
+  /* Cardul "Azi pe plus": o cerere pe drum, numarul ei (un raspuns vechi nu mai conteaza) si cand s-a incercat ultima data. */
+  var pulseBusy = false, pulseSeq = 0, pulseTried = 0;
   var feed = newFeed();
   var openDays = {};
   var appEl, viewEl, navEl, toastEl, dlg;
@@ -1363,7 +1392,7 @@ var CAM = (function () {
     return {
       v: 2, lang: null, demo: false, uid: null, name: '', email: '', entries: [], favs: defaultFavs(),
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
-      lastSync: 0, pubDefault: false, sv: 0
+      lastSync: 0, pubDefault: false, sv: 0, pulse: null
     };
   }
 
@@ -1400,6 +1429,11 @@ var CAM = (function () {
     d.uploads = (Array.isArray(d.uploads) ? d.uploads : []).filter(okName);
     d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
+    /* Ultimul raspuns al cardului "Azi pe plus", ca sa fie aratat pe loc la deschiderea fluxului. */
+    var pz = d.pulse;
+    d.pulse = pz && typeof pz === 'object' && typeof pz.day === 'string' && Array.isArray(pz.up)
+      ? { day: pz.day, on: !!pz.on, total: pz.total > 0 ? pz.total : 0, up: pz.up.filter(function (n) { return typeof n === 'string'; }).slice(0, 100), at: pz.at > 0 ? pz.at : 0 }
+      : null;
     d.pubDefault = !!d.pubDefault;
     d.entries = d.entries.filter(function (e) { return okItem(e) && /^\d{4}-\d{2}-\d{2}$/.test(e.day) && typeof e.id === 'string'; });
     d.entries.forEach(function (e) {
@@ -1463,6 +1497,8 @@ var CAM = (function () {
   function notesOn() { return !BACKEND || data.sv >= NOTES_FROM; }
   /* Pozele stau in cont, deci exista doar cu cont si cu baza de date adusa la versiunea care le cunoaste. */
   function photosOn() { return BACKEND && data.sv >= PHOTOS_FROM; }
+  /* Telul comun "Azi pe plus" cere si el baza de date adusa la versiunea care il cunoaste. */
+  function pulseOn() { return BACKEND && data.sv >= PULSE_FROM; }
 
   /* ---------- salvarea in cont ---------- */
 
@@ -1538,6 +1574,7 @@ var CAM = (function () {
       /* Ce tocmai a plecat poate schimba fluxul: se reincarca acum sau la urmatoarea deschidere. */
       if (batch.length || sent.del.length || sent.vis.length || sent.note.length || sent.photo.length) {
         feed.at = 0;
+        if (data.pulse && (batch.length || sent.del.length)) data.pulse.at = 0;
         if (route === 'flux') openFeed();
       }
       /* Contul e la zi: pot pleca pozele care asteapta si se pot sterge cele ramase fara activitate.
@@ -2180,7 +2217,71 @@ var CAM = (function () {
   function openFeed() {
     if (!feed.ready) loadFeed(true);
     else if (Date.now() - feed.at > 4000) refreshFeed();
+    if (pulseOn() && Date.now() - pulseAt() > 4000) loadPulse(null);
     if (Date.now() - data.lastSync > 30000) queueSync(0);
+  }
+
+  /* ---------- telul comun "Azi pe plus" ---------- */
+
+  function pulseAt() { return data.pulse ? data.pulse.at : 0; }
+
+  /* Cardul se arata din ultimul raspuns pastrat, daca este pentru ziua de azi. */
+  function pulseToday() {
+    return data.pulse && data.pulse.day === L.dayKey(new Date()) ? data.pulse : null;
+  }
+
+  /* Aduce starea telului comun; cu join true omul intra, cu false iese. Un raspuns vechi, sosit dupa altul mai nou, nu conteaza. */
+  function loadPulse(join) {
+    if (!pulseOn() || auth !== 'in') return;
+    if (pulseBusy && join == null) return;
+    var seq = ++pulseSeq, uid = data.uid, mine = session, args = { p_day: L.dayKey(new Date()) };
+    if (join != null) args.p_join = !!join;
+    pulseBusy = true;
+    pulseTried = Date.now();
+    API.rpc('pulse', args).then(function (r) {
+      if (seq !== pulseSeq || data.uid !== uid || mine !== session) return;
+      if (!r || !Array.isArray(r.up)) throw new Error('bad_response');
+      data.pulse = {
+        day: typeof r.day === 'string' ? r.day : args.p_day, on: !!r['in'], total: r.total > 0 ? r.total : 0,
+        up: r.up.filter(function (n) { return typeof n === 'string'; }).slice(0, 100), at: Date.now()
+      };
+      persist();
+      if (join != null) toast(tr(join ? 'pulseJoined' : 'pulseLeft'));
+    }, function (err) {
+      if (seq !== pulseSeq || data.uid !== uid || mine !== session) return;
+      if (join != null) toast(tr(err.offline ? 'errOffline' : 'errGeneric'));
+    }).then(function () {
+      if (seq !== pulseSeq) return;
+      pulseBusy = false;
+      if (route === 'flux' && auth === 'in') showFeed();
+    });
+  }
+
+  /* "Ana, Bogdan și tu": numele celor pe plus, cu numele propriu inlocuit de "tu", la sfarsit. */
+  function pulseNames(up) {
+    var others = up.filter(function (n) { return n !== data.name; }).map(function (n) { return '<b>' + esc(n) + '</b>'; });
+    if (up.length !== others.length) others.push('<b>' + esc(tr('pulseYou')) + '</b>');
+    if (!others.length) return '';
+    if (others.length === 1) return others[0];
+    return others.slice(0, -1).join(', ') + ' ' + esc(tr('pulseAnd')) + ' ' + others[others.length - 1];
+  }
+
+  function viewPulse() {
+    if (!pulseOn()) return '';
+    var pz = pulseToday();
+    if (!pz) return '';
+    var names = pulseNames(pz.up), n = pz.up.length;
+    var sub = !pz.total ? esc(tr('pulseNobody')) : names || esc(tr('pulseNoneUp'));
+    var acts = pz.on
+      ? '<button type="button" class="link" data-act="pulse-leave" data-focus="pulse-leave"' + (pulseBusy ? ' disabled' : '') + '>' + esc(tr('pulseLeave')) + '</button>'
+      : '<button type="button" class="pulse-join" data-act="pulse-join" data-focus="pulse-join"' + (pulseBusy ? ' disabled' : '') + '>' + esc(tr('pulseJoin')) + '</button>';
+    return '<section class="pulse" id="pulse" aria-label="' + esc(tr('pulseTitle')) + '">' +
+      '<div class="pulse-top"><div class="pulse-t">' + esc(tr('pulseTitle')) + '</div>' +
+        '<div class="pulse-n' + (n ? '' : ' zero') + '" id="pulse-n">' + esc(pz.total ? tr('pulseOf', { n: n, m: pz.total }) : '0') + '</div></div>' +
+      '<p class="pulse-s" id="pulse-s">' + sub + '</p>' +
+      (pz.on ? '' : '<p class="pulse-s">' + esc(tr('pulseWhy')) + '</p>') +
+      '<div class="pulse-acts">' + acts + '</div>' +
+      '</section>';
   }
 
   /* Cat timp ecranul Flux este deschis si la vedere, se improspateaza singur. Dupa incercari nereusite asteapta tot mai mult. */
@@ -2193,6 +2294,8 @@ var CAM = (function () {
       return;
     }
     if (now - Math.max(feed.at, feed.tried) >= wait) refreshFeed();
+    /* Cardul "Azi pe plus", mai rar decat fluxul. */
+    if (pulseOn() && !pulseBusy && now - Math.max(pulseAt(), pulseTried) >= PULSE_EVERY * Math.min(8, Math.pow(2, feed.fails))) loadPulse(null);
     /* Incurajarile primite la activitati care nu mai sunt in flux vin cu starea contului, mai rar. */
     if (!syncErr && !syncing && now - data.lastSync > 60000) queueSync(0);
   }
@@ -2660,6 +2763,24 @@ var CAM = (function () {
       '</div>';
   }
 
+  /* Rezumatul saptamanii, sub grafic: cate zile din cele notate pana acum au fost pe plus si care a fost cea mai buna.
+     Zilele dinaintea primei notari nu se numara: unui om care a inceput alaltaieri nu i se spune "2 din 7". */
+  function weekLine(days, vals, keys, today) {
+    if (!keys.length) return '';
+    var first = keys[keys.length - 1], from = 0;
+    while (from < days.length - 1 && days[from] < first) from++;
+    var n = 0, m = days.length - from, best = -1;
+    for (var i = from; i < days.length; i++) {
+      if (vals[i] > 0) n++;
+      if (vals[i] > 0 && (best < 0 || vals[i] > vals[best])) best = i;
+    }
+    var bestText = best < 0 ? '' : tr('weekBest', {
+      d: days[best] === today ? tr('today').toLowerCase() : tr('days')[L.parseDay(days[best]).getDay()], v: L.fmt(vals[best])
+    });
+    if (m === 1) return '<b>' + esc(tr(n ? 'weekTodayUp' : 'weekTodayNot')) + '</b>';
+    return '<b>' + esc(tr('weekOf', { n: n, m: m })) + '</b> · ' + esc(n ? bestText : tr('weekNoPlus'));
+  }
+
   function mixText(p, m) {
     if (p + m === 1) return tr(p ? 'onePlus' : 'oneMinus');
     return m === 0 ? tr('allPlus') : p === 0 ? tr('allMinus') : tr('mix', { p: p, m: m });
@@ -2688,6 +2809,7 @@ var CAM = (function () {
       var short = tr('daysShort')[L.parseDay(k).getDay()];
       return k === today ? '<div class="is-today">' + esc(tr('todayShort') || short) + '</div>' : '<div>' + esc(short) + '</div>';
     }).join('');
+    var line = weekLine(days, vals, keys, today);
     var rows = keys.map(function (k) {
       var list = byDay[k].slice().sort(function (a, b) { return b.ts - a.ts; });
       var p = list.filter(function (e) { return e.type === 'plus'; }).length, m = list.length - p;
@@ -2709,6 +2831,7 @@ var CAM = (function () {
         '</div>' +
         '<div class="chart" role="img" aria-label="' + esc(aria) + '">' + cols + '</div>' +
         '<div class="days" aria-hidden="true">' + labels + '</div>' +
+        (line ? '<p class="hero-line" id="week-line">' + line + '</p>' : '') +
       '</section>' +
       '<section class="sect"><h2>' + esc(tr('byDay')) + '</h2>' +
         (keys.length
@@ -2763,6 +2886,7 @@ var CAM = (function () {
       '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('feed')) + '</h1><p class="head-sub">' + esc(tr('feedSub')) + '</p></header>' +
       '<section class="gold" aria-label="' + esc(tr('cheersGot')) + '"><div><div class="gold-t">' + esc(tr('cheersGot')) + '</div><div class="gold-s">' + esc(tr('cheersGotSub')) + '</div></div>' +
         '<div class="gold-n" id="cheers-got">' + ICON.starFlat + myCheers() + '</div></section>' +
+      viewPulse() +
       '<div class="feed-bar">' +
         '<div class="seg small" role="group" aria-label="' + esc(tr('feedLang')) + '">' +
           '<button type="button" class="seg-b" aria-pressed="' + !feed.all + '" data-act="feed-lang" data-all="0" data-focus="fl-0">' + esc(tr('myLang')) + '</button>' +
@@ -3357,8 +3481,12 @@ var CAM = (function () {
       feed = newFeed();
       feed.all = all;
       loadFeed(true);
+    } else if (act === 'pulse-join' || act === 'pulse-leave') {
+      loadPulse(act === 'pulse-join');
+      showFeed();
     } else if (act === 'feed-refresh') {
       loadFeed(true);
+      if (pulseOn()) loadPulse(null);
       queueSync(0);
     } else if (act === 'feed-more') {
       loadFeed(false);

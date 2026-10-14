@@ -53,6 +53,19 @@
 .gold-n { flex: none; display: flex; align-items: center; gap: 6px; font: 800 28px/1 var(--font-display); font-variant-numeric: tabular-nums; }
 .gold-n svg { fill: currentColor; }
 
+/* The shared goal "On plus today": one compact card, a count and the first names of those on plus */
+.pulse { margin-top: 12px; padding: 16px 20px; border-radius: 24px; background: var(--card); color: var(--ink); border: 1.5px solid var(--line); }
+.pulse-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.pulse-t { font-size: 15px; font-weight: 700; }
+.pulse-n { flex: none; font: 800 28px/1 var(--font-display); font-variant-numeric: tabular-nums; color: var(--plus-text); }
+.pulse-n.zero { color: var(--muted); }
+.pulse-s { margin-top: 6px; font-size: 14px; color: var(--muted); overflow-wrap: anywhere; }
+.pulse-s b { font-weight: 700; color: var(--ink); }
+.pulse-acts { margin-top: 8px; display: flex; align-items: center; gap: 12px; }
+.pulse-join { min-height: 40px; padding: 0 18px; border-radius: 20px; background: var(--ink); color: var(--on-ink); font-size: 14px; font-weight: 700; }
+.pulse-join:disabled { opacity: .6; }
+.pulse-acts .link { min-height: 40px; }
+
 /* Feed */
 .feed-bar { margin-top: 14px; padding-inline: 8px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; }
 .feed-bar .link { margin-left: auto; }
