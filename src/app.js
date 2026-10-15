@@ -5,13 +5,15 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.5.2';
+  var VERSION = '0.6';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
-  var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume'] : ['plus', 'minus', 'detalii']);
-  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, respectiv telul comun. */
-  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5;
+  var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume', 'copil'] : ['plus', 'minus', 'detalii', 'copil']);
+  /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, telul comun, respectiv copiii. */
+  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6;
+  /* Cel mult atatia copii in modul educator. */
+  var KIDS_MAX = 12;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
      si la cat timp se improspateaza singur cat e pe ecran. */
@@ -39,7 +41,8 @@
     close: '<svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg>',
     x: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
     note: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h9"/></svg>',
-    photo: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3.5 16.5l5-5 4 4 2.5-2.5 5.5 5.5"/><circle cx="15.5" cy="9.5" r="1.2" fill="currentColor"/></svg>'
+    photo: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3.5 16.5l5-5 4 4 2.5-2.5 5.5 5.5"/><circle cx="15.5" cy="9.5" r="1.2" fill="currentColor"/></svg>',
+    chevron: '<svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
   };
 
   var data, lang, route = 'azi';
@@ -75,6 +78,8 @@
   var photoErr = '', pumpOffline = false;
   var authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
   var nameForm = { value: '', busy: false, error: '' };
+  /* Ecranul pe care se adauga un copil (modul educator) si ecranul de pe care s-a ajuns acolo. */
+  var kidForm = { value: '', error: '', back: 'profil' };
   /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
      shownFeed tine minte ce flux este desenat acum, ca improspatarea sa nu redeseneze degeaba. */
   var feedSeq = 0, shownFeed = '';
@@ -185,7 +190,9 @@
     return {
       v: 2, lang: null, demo: false, uid: null, name: '', email: '', entries: [], favs: defaultFavs(),
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
-      lastSync: 0, pubDefault: false, sv: 0, pulse: null
+      lastSync: 0, pubDefault: false, sv: 0, pulse: null,
+      /* Modul educator: pornit sau nu, lista copiilor (id, nume) si, doar pe acest dispozitiv, cine este ales acum (who). */
+      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null
     };
   }
 
@@ -239,7 +246,34 @@
       if (typeof e.photo !== 'string' || !PHOTO.NAME.test(e.photo)) delete e.photo;
     });
     d.favs = cleanFavs(d.favs);
+    d.edu = cleanEdu(d.edu);
+    d.eduRev = d.eduRev || 0;
+    d.eduSynced = d.eduSynced || 0;
+    d.who = typeof d.who === 'string' && findKid(d.who, d.edu) ? d.who : null;
+    d.entries.forEach(function (e) {
+      if (typeof e.kid !== 'string' || !UUID.test(e.kid)) delete e.kid;
+      else e.pub = false;
+    });
     return d;
+  }
+
+  /* Lista copiilor, curatata: id-uri de forma asteptata si nume scurte. */
+  function cleanEdu(edu) {
+    var out = { on: !!(edu && edu.on), list: [] }, seen = {};
+    (edu && Array.isArray(edu.list) ? edu.list : []).forEach(function (k) {
+      if (!k || typeof k.id !== 'string' || !UUID.test(k.id) || typeof k.name !== 'string' || seen[k.id]) return;
+      var name = k.name.replace(/\s+/g, ' ').trim().slice(0, 20);
+      if (!name || out.list.length >= KIDS_MAX) return;
+      seen[k.id] = true;
+      out.list.push({ id: k.id, name: name });
+    });
+    return out;
+  }
+
+  function findKid(id, edu) {
+    var list = (edu || data.edu).list;
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
   }
 
   /* O saptamana de exemple, doar pentru previzualizare. */
@@ -285,13 +319,25 @@
 
   function findFav(id) { for (var i = 0; i < data.favs.length; i++) if (data.favs[i].id === id) return data.favs[i]; return null; }
   function findEntry(id) { for (var i = 0; i < data.entries.length; i++) if (data.entries[i].id === id) return data.entries[i]; return null; }
-  function myCheers() { return data.entries.reduce(function (s, e) { return s + (e.cheers || 0); }, 0); }
+  function myCheers() { return data.entries.reduce(function (s, e) { return s + (e.kid ? 0 : e.cheers || 0); }, 0); }
   /* Detaliile se pot scrie pe dispozitiv oricand; cu cont, doar daca baza de date a fost adusa la versiunea care le pastreaza. */
   function notesOn() { return !BACKEND || data.sv >= NOTES_FROM; }
   /* Pozele stau in cont, deci exista doar cu cont si cu baza de date adusa la versiunea care le cunoaste. */
   function photosOn() { return BACKEND && data.sv >= PHOTOS_FROM; }
   /* Telul comun "Azi pe plus" cere si el baza de date adusa la versiunea care il cunoaste. */
   function pulseOn() { return BACKEND && data.sv >= PULSE_FROM; }
+  /* Modul educator se poate porni fara cont oricand; cu cont, doar daca baza de date stie de copii. */
+  function eduAvail() { return !BACKEND || data.sv >= EDU_FROM; }
+  function eduOn() { return eduAvail() && data.edu.on; }
+  /* Copilul ales acum, sau null pentru adult. O alegere ramasa fara copil (sters, mod oprit) inseamna adultul. */
+  function whoNow() { return eduOn() && data.who && findKid(data.who) ? data.who : null; }
+  function whoName() { var k = whoNow() ? findKid(whoNow()) : null; return k ? k.name : tr('me'); }
+  /* Activitatile celui ales: ale adultului, sau ale copilului ales. */
+  function scope() {
+    var who = whoNow();
+    return data.entries.filter(function (e) { return (e.kid || null) === who; });
+  }
+  function isKidEntry(e) { return !!e.kid; }
 
   /* ---------- salvarea in cont ---------- */
 
@@ -316,7 +362,8 @@
      nu un drum nou pana la server. */
   function canSend() {
     if (data.outbox.del.length || data.outbox.vis.length || data.outbox.note.length || data.favsRev !== data.favsSynced) return true;
-    for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1) return true;
+    if (data.eduRev !== data.eduSynced && data.sv >= EDU_FROM) return true;
+    for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1 && canTravel(data.entries[i])) return true;
     return photoOps(null).length > 0;
   }
 
@@ -334,10 +381,11 @@
     /* Un raspuns care soseste dupa iesirea din cont, sau dupa intrarea in altul, nu mai are ce schimba aici. */
     var uid = data.uid, mine = session;
     function late() { return mine !== session || data.uid !== uid; }
-    var batch = data.entries.filter(function (e) { return e.sync === 1; }).slice(0, 300);
+    var batch = data.entries.filter(function (e) { return e.sync === 1 && canTravel(e); }).slice(0, 300);
     var sent = {
       ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), note: data.outbox.note.slice(), photo: [],
-      rev: data.favsRev, favs: data.favsRev !== data.favsSynced
+      rev: data.favsRev, favs: data.favsRev !== data.favsSynced,
+      eduRev: data.eduRev, edu: data.eduRev !== data.eduSynced && data.sv >= EDU_FROM
     };
     batch.forEach(function (e) { sent.ids[e.id] = true; });
     /* Contul afla de o poza abia dupa ce fisierul ei a ajuns acolo, si doar pentru o activitate pe care o are sau o primeste acum. */
@@ -349,6 +397,7 @@
         var o = { id: e.id, day: e.day, ts: e.ts, type: e.type, pts: e.pts, pub: !!e.pub };
         if (e.key) o.key = e.key; else o.name = e.name;
         if (e.note) o.note = e.note;
+        if (e.kid) o.kid = e.kid;
         return o;
       }),
       p_del: sent.del,
@@ -359,6 +408,7 @@
     /* Un server ramas la o versiune mai veche nu cunoaste p_note; fara schimbari de detalii nu i se trimite. */
     if (sent.note.length) args.p_note = sent.note;
     if (sent.photo.length) args.p_photo = sent.photo;
+    if (sent.edu) args.p_kids = data.edu;
     API.rpc('sync', args).then(function (res) {
       if (late()) return;
       applySync(res, sent);
@@ -395,6 +445,9 @@
     });
   }
 
+  /* O activitate a unui copil pleaca spre cont doar daca baza de date stie de copii; altfel ar ajunge pe numele adultului. */
+  function canTravel(e) { return !e.kid || data.sv >= EDU_FROM; }
+
   function applySync(res, sent) {
     if (!res || !Array.isArray(res.entries)) throw new Error('bad_response');
     data.outbox.del = data.outbox.del.filter(function (id) { return sent.del.indexOf(id) < 0; });
@@ -412,6 +465,7 @@
       if (s.key) e.key = s.key; else e.name = s.name;
       if (typeof s.note === 'string' && s.note) e.note = s.note;
       if (typeof s.photo === 'string' && PHOTO.NAME.test(s.photo)) e.photo = s.photo;
+      if (typeof s.kid === 'string' && UUID.test(s.kid)) { e.kid = s.kid; e.pub = false; }
       if (okItem(e)) next.push(e);
     });
     /* Ce s-a schimbat aici cat timp cererea era pe drum ramane valabil. */
@@ -442,6 +496,12 @@
     if (data.favsRev === data.favsSynced) {
       if (Array.isArray(res.favs)) data.favs = cleanFavs(res.favs);
       else data.favsRev++; /* contul nu are inca favoritele: pleaca la drumul urmator */
+    }
+    /* Copiii, la fel ca favoritele; un server care nu stie de ei nu ii atinge. */
+    if (sent.edu) data.eduSynced = sent.eduRev;
+    if (data.eduRev === data.eduSynced && Number(res.v) >= EDU_FROM) {
+      if (res.kids && typeof res.kids === 'object') data.edu = cleanEdu(res.kids);
+      else if (data.edu.on || data.edu.list.length) data.eduRev++; /* contul nu stie inca de copiii de aici: pleaca la drumul urmator */
     }
     data.sv = Number(res.v) > 0 ? Number(res.v) : 0;
     /* Numele afisat, schimbat poate de pe alt dispozitiv. */
@@ -793,6 +853,7 @@
     openDays = {};
     openNotes = {};
     noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
+    kidForm = { value: '', error: '', back: 'profil' };
     clearDraft();
     clearTimeout(pumpTimer);
     pumping = '';
@@ -1144,9 +1205,25 @@
 
   function entrySub(e) {
     var s = timeOf(e.ts);
-    if (!BACKEND) return s;
+    if (!BACKEND || isKidEntry(e)) return s;
     if (!e.pub) return s + ' · ' + tr('privateL');
     return s + ' · ' + tr('publicL') + (e.cheers ? ' · ' + count(e.cheers, tr('cheerForms')) : '');
+  }
+
+  /* Antetul unui ecran. Cand modul educator e pornit, in dreapta sta butonul cu cel ales (Eu sau un copil), pe orice ecran;
+     right este ce mai sta in dreapta (butonul de inchidere al formularelor), altfel randul de sub titlu. */
+  function head(title, sub, right) {
+    var who = whoPill();
+    var end = who || right ? '<div class="head-end">' + who + (right || '') + '</div>' : '';
+    return '<header class="head' + (right ? ' head-add' : '') + (who ? ' has-who' : '') + '"><h1 id="title" tabindex="-1">' + title + '</h1>' +
+      end + (!right && sub ? '<p class="head-sub">' + sub + '</p>' : '') + '</header>';
+  }
+
+  function whoPill() {
+    if (!eduOn()) return '';
+    var kid = whoNow();
+    return '<button type="button" class="who' + (kid ? ' kid' : '') + '" data-act="who-open" data-focus="who" aria-haspopup="dialog" aria-label="' + esc(tr('whoFor')) + '">' +
+      esc(whoName()) + ICON.chevron + '</button>';
   }
 
   /* Semnul mic care arata ca o activitate are detalii; textul ascuns il spune si cititoarelor de ecran.
@@ -1349,7 +1426,7 @@
   function saveDraft() {
     var d = null;
     if (isAddRoute(route)) {
-      d = { route: route, add: { type: add.type, favId: add.favId, name: add.name, pts: add.pts, keep: add.keep, pub: add.pub, note: add.note, noteOpen: add.noteOpen, pic: picInfo(add.pic) } };
+      d = { route: route, add: { type: add.type, favId: add.favId, name: add.name, pts: add.pts, keep: add.keep, pub: add.pub, note: add.note, noteOpen: add.noteOpen, pic: picInfo(add.pic), kid: add.kid } };
     } else if (route === 'detalii' && noteForm.id) {
       d = { route: route, note: { id: noteForm.id, value: noteForm.value, back: noteForm.back, drop: noteForm.drop, pic: picInfo(noteForm.pic) } };
     }
@@ -1423,6 +1500,8 @@
       add.pub = BACKEND && !!a.pub;
       add.note = notesOn() && typeof a.note === 'string' ? a.note.slice(0, L.NOTE_MAX * 2) : '';
       add.noteOpen = !!a.noteOpen || !!add.note;
+      add.kid = typeof a.kid === 'string' && eduOn() && findKid(a.kid) ? a.kid : null;
+      if (add.kid) add.pub = false;
       draftBack = !!(add.name || add.note || okPic(a.pic));
       if (okPic(a.pic)) restorePic(add, 'act', a.pic);
       return;
@@ -1464,16 +1543,17 @@
   }
 
   function viewToday() {
-    var now = new Date(), today = L.dayKey(now), t = L.totals(data.entries);
+    var now = new Date(), today = L.dayKey(now), mine = scope(), t = L.totals(mine);
     var total = t[today] || 0;
-    var list = data.entries.filter(function (e) { return e.day === today; }).sort(function (a, b) { return b.ts - a.ts; });
+    var list = mine.filter(function (e) { return e.day === today; }).sort(function (a, b) { return b.ts - a.ts; });
     var week = L.lastDays(today, 7).reduce(function (s, k) { return s + (t[k] || 0); }, 0);
     var streak = L.currentStreak(t, today), best = L.bestStreak(t), got = myCheers();
-    var third = BACKEND
+    /* Copiii nu primesc incurajari (activitatile lor sunt private): pentru ei a treia cifra este recordul. */
+    var third = BACKEND && !whoNow()
       ? '<div class="stat"><div class="stat-num" id="cheers">' + ICON.star + got + '</div><div class="stat-label">' + esc(tr('cheerForms')[got === 1 ? 0 : 1]) + '</div></div>'
       : '<div class="stat"><div class="stat-num" id="best">' + esc(count(best, tr('day'))) + '</div><div class="stat-label">' + esc(tr('bestLabel')) + '</div></div>';
     return '' +
-      '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('today')) + '</h1><p class="head-sub">' + esc(longDate(now)) + '</p></header>' +
+      head(esc(tr('today')), esc(longDate(now))) +
       demoBanner() + pendingBanner() +
       '<section class="hero" aria-label="' + esc(tr('pointsToday')) + '">' +
         '<div class="hero-num ' + tone(total) + '" id="score">' + L.fmt(total) + '</div>' +
@@ -1531,16 +1611,18 @@
       return '<button type="button" class="chip" aria-pressed="' + (add.favId === f.id) + '" data-act="fav" data-id="' + esc(f.id) + '" data-focus="f-' + esc(f.id) + '">' +
         '<span class="chip-n">' + esc(favName(f)) + '</span><span class="chip-p">' + L.fmt(f.type === 'minus' ? -f.pts : f.pts) + '</span></button>';
     }).join('');
-    var who = !BACKEND ? '' :
+    /* Activitatile copiilor sunt mereu private: fara randul de vizibilitate. */
+    var who = !BACKEND ? '' : add.kid
+      ? '<p class="note top" id="kid-private">' + esc(tr('eduKidPrivate')) + '</p>' :
       '<div class="line"><div><div class="line-t" id="who-l">' + esc(tr('who')) + '</div><div class="line-s" id="who-s">' + esc(tr(add.pub ? 'inFeed' : 'onlyYou')) + '</div></div>' +
         '<div class="seg small" role="group" aria-labelledby="who-l">' +
           '<button type="button" class="seg-b" aria-pressed="' + !add.pub + '" data-act="pub" data-v="0" data-focus="pub-0">' + esc(tr('priv')) + '</button>' +
           '<button type="button" class="seg-b" aria-pressed="' + !!add.pub + '" data-act="pub" data-v="1" data-focus="pub-1">' + esc(tr('pub')) + '</button>' +
         '</div></div>';
     return '' +
-      '<header class="head head-add"><h1 id="title" tabindex="-1">' + esc(tr('newActivity')) + '</h1>' +
-        '<a class="icon-btn" href="#azi" data-route="azi" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a></header>' +
+      head(esc(tr('newActivity')), '', '<a class="icon-btn" href="#azi" data-route="azi" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a>') +
       '<div class="pad">' +
+        (add.kid && findKid(add.kid) ? '<p class="for-kid" id="for-kid">' + esc(tr('forKid', { x: findKid(add.kid).name })) + '</p>' : '') +
         '<div class="seg" role="group" aria-label="' + esc(tr('typeLabel')) + '">' +
           '<button type="button" class="seg-b plus" aria-pressed="' + (add.type === 'plus') + '" data-act="type" data-type="plus" data-focus="type-plus">+ ' + esc(tr('addGood')) + '</button>' +
           '<button type="button" class="seg-b minus" aria-pressed="' + (add.type === 'minus') + '" data-act="type" data-type="minus" data-focus="type-minus">− ' + esc(tr('addBad')) + '</button>' +
@@ -1592,13 +1674,13 @@
   function barH(v, max) { return v === 0 ? 6 : Math.max(8, Math.round(Math.abs(v) / max * 120)); }
 
   function viewJournal() {
-    var today = L.dayKey(new Date()), t = L.totals(data.entries);
+    var today = L.dayKey(new Date()), mine = scope(), t = L.totals(mine);
     var days = L.lastDays(today, 7), vals = days.map(function (k) { return t[k] || 0; });
     var week = vals.reduce(function (a, b) { return a + b; }, 0);
     var max = Math.max.apply(null, [1].concat(vals.map(Math.abs)));
     var streak = L.currentStreak(t, today);
     var byDay = {};
-    data.entries.forEach(function (e) { (byDay[e.day] = byDay[e.day] || []).push(e); });
+    mine.forEach(function (e) { (byDay[e.day] = byDay[e.day] || []).push(e); });
     var keys = Object.keys(byDay).sort().reverse();
 
     var aria = tr('chartAria') + ': ' + days.map(function (k, i) {
@@ -1626,7 +1708,7 @@
     }).join('');
 
     return '' +
-      '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('journal')) + '</h1><p class="head-sub">' + esc(tr('last7')) + '</p></header>' +
+      head(esc(tr('journal')), esc(tr('last7'))) +
       '<section class="hero" aria-label="' + esc(tr('last7')) + '">' +
         '<div class="hero-top"><div class="hero-num sm ' + tone(week) + '" id="week-total">' + L.fmt(week) + '</div>' +
           (streak
@@ -1687,7 +1769,7 @@
         (feed.done ? '' : '<div class="center"><button type="button" class="link" data-act="feed-more" data-focus="feed-more">' + esc(tr(feed.loading ? 'loading' : 'moreFeed')) + '</button></div>');
     }
     return '' +
-      '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('feed')) + '</h1><p class="head-sub">' + esc(tr('feedSub')) + '</p></header>' +
+      head(esc(tr('feed')), esc(tr('feedSub'))) +
       '<section class="gold" aria-label="' + esc(tr('cheersGot')) + '"><div><div class="gold-t">' + esc(tr('cheersGot')) + '</div><div class="gold-s">' + esc(tr('cheersGotSub')) + '</div></div>' +
         '<div class="gold-n" id="cheers-got">' + ICON.starFlat + myCheers() + '</div></section>' +
       viewPulse() +
@@ -1739,13 +1821,125 @@
       : '<section class="sect"><h2>' + esc(tr('yourData')) + '</h2><p class="note">' + esc(tr('dataNote')) + '</p>' +
           '<button type="button" class="btn-line" data-act="reset" data-focus="reset">' + esc(tr('resetAll')) + '</button></section>';
     return '' +
-      '<header class="head"><h1 id="title" tabindex="-1">' + esc(tr('profile')) + '</h1><p class="head-sub">' + esc(tr('version', { x: VERSION })) + '</p></header>' +
+      head(esc(tr('profile')), esc(tr('version', { x: VERSION }))) +
       top +
       '<section class="sect"><h2 id="lang-h">' + esc(tr('language')) + '</h2>' +
         '<div class="seg" role="group" aria-labelledby="lang-h">' + langButtons() + '</div></section>' +
+      eduSection() +
       '<section class="sect"><h2>' + esc(tr('favsPlus')) + '</h2>' + favList('plus') + '</section>' +
       '<section class="sect"><h2>' + esc(tr('favsMinus')) + '</h2>' + favList('minus') + '</section>' +
       bottom;
+  }
+
+  /* Modul educator, in Profil: o bifa si, cand e pornit, lista copiilor. */
+  function eduSection() {
+    if (!eduAvail()) return '';
+    var kids = data.edu.on
+      ? '<h3 class="sub-h">' + esc(tr('eduKids')) + '</h3>' +
+        (data.edu.list.length
+          ? '<ul class="rows" id="kid-list">' + data.edu.list.map(function (k) {
+              return '<li class="row"><span class="row-main"><span class="row-t">' + esc(k.name) + '</span></span>' +
+                '<button type="button" class="icon-btn" data-act="kid-remove" data-id="' + esc(k.id) + '" data-focus="kr-' + esc(k.id) + '" aria-label="' + esc(tr('kidRemove', { x: k.name })) + '">' + ICON.x + '</button></li>';
+            }).join('') + '</ul>'
+          : '<p class="note" id="kid-none">' + esc(tr('eduNoKids')) + '</p>') +
+        (data.edu.list.length < KIDS_MAX ? '<a class="link" href="#copil" data-route="copil" data-focus="kid-add">' + esc(tr('kidAdd')) + '</a>' : '<p class="note">' + esc(tr('kidsMax')) + '</p>')
+      : '';
+    return '<section class="sect" id="edu"><h2>' + esc(tr('eduTitle')) + '</h2>' +
+      '<label class="check"><input type="checkbox" id="edu-on"' + (data.edu.on ? ' checked' : '') + '><span>' + esc(tr('eduOn')) + '</span></label>' +
+      '<p class="note">' + esc(tr('eduSub')) + '</p>' + kids + '</section>';
+  }
+
+  /* Ecranul pe care se adauga un copil. */
+  function viewKid() {
+    return '' +
+      head(esc(tr('kidNew')), '', '<a class="icon-btn" href="#' + kidForm.back + '" data-route="' + kidForm.back + '" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a>') +
+      '<div class="pad"><form id="kid-form" novalidate>' +
+        '<div class="field"><label for="kid-input">' + esc(tr('kidNameLabel')) + '</label>' +
+          '<input id="kid-input" name="kid" type="text" maxlength="20" autocomplete="off" autocapitalize="words" enterkeyhint="done" value="' + esc(kidForm.value) + '" aria-describedby="kid-hint">' +
+          '<p class="hint" id="kid-hint">' + esc(tr('kidNameHint')) + '</p>' +
+          '<p class="err" id="kid-err" role="alert"' + (kidForm.error ? '' : ' hidden') + '>' + esc(kidForm.error ? tr(kidForm.error) : '') + '</p></div>' +
+        '<div class="go"><button type="submit" class="save" id="kid-btn">' + esc(tr('kidAdd')) + '</button></div>' +
+      '</form></div>';
+  }
+
+  function submitKid() {
+    var el = byId('kid-input');
+    var v = (el ? el.value : kidForm.value).replace(/\s+/g, ' ').trim();
+    kidForm.value = v;
+    var taken = data.edu.list.some(function (k) { return fold(k.name) === fold(v); });
+    var bad = !v || v.length > 20 || /[<>]/.test(v) ? 'kidNameInvalid' : taken ? 'kidNameTaken' : data.edu.list.length >= KIDS_MAX ? 'kidsMax' : '';
+    if (bad) {
+      kidForm.error = bad;
+      var err = byId('kid-err');
+      if (err) { err.textContent = tr(bad); err.hidden = false; }
+      if (el) el.focus();
+      return;
+    }
+    var kid = { id: uuid(), name: v };
+    data.edu.list.push(kid);
+    data.edu.on = true;
+    data.eduRev++;
+    data.who = kid.id;
+    persist();
+    var back = kidForm.back;
+    kidForm = { value: '', error: '', back: 'profil' };
+    navigate(back, true);
+    toast(tr('kidAdded', { x: kid.name }));
+    queueSync();
+  }
+
+  /* Alegerea celui pentru care se noteaza, din butonul de sus: Eu, copiii, Adauga copil. */
+  function openWho() {
+    var who = whoNow(), list = [{ id: '', label: tr('me'), on: !who }];
+    data.edu.list.forEach(function (k) { list.push({ id: k.id, label: k.name, on: who === k.id }); });
+    openDialog({
+      title: tr('whoFor'), cancel: tr('close'),
+      list: list.map(function (it) {
+        return '<button type="button" class="row" data-act="who-pick" data-id="' + esc(it.id) + '" aria-pressed="' + it.on + '"><span class="row-main"><span class="row-t">' + esc(it.label) + '</span></span>' +
+          (it.on ? '<span class="pill plus">✓</span>' : '') + '</button>';
+      }).join('') + (data.edu.list.length < KIDS_MAX ? '<button type="button" class="link dlg-link" data-act="kid-new">' + esc(tr('kidAdd')) + '</button>' : '')
+    });
+  }
+
+  function pickWho(id) {
+    data.who = id && findKid(id) ? id : null;
+    /* Un formular de notare deja deschis trece si el la cel ales. */
+    if (isAddRoute(route)) {
+      add.kid = whoNow();
+      if (add.kid) add.pub = false;
+      saveDraft();
+    }
+    persist();
+    render();
+    focusTitle();
+  }
+
+  /* Un copil scos pleaca din lista cu tot cu activitatile lui, de pe dispozitiv si din cont. */
+  function askRemoveKid(id) {
+    var kid = findKid(id);
+    if (!kid) return;
+    openDialog({
+      title: tr('kidRemoveTitle', { x: kid.name }), body: tr('kidRemoveBody', { x: kid.name }), ok: tr('kidRemoveOk'), cancel: tr('cancel'),
+      onOk: function () {
+        data.entries.filter(function (e) { return e.kid === id; }).forEach(function (e) {
+          if (BACKEND) {
+            data.outbox.note = data.outbox.note.filter(function (op) { return op.id !== e.id; });
+            data.outbox.photo = data.outbox.photo.filter(function (op) { return op.id !== e.id; });
+            if (e.photo) releaseFile(e.photo);
+            data.outbox.del.push(e.id);
+          }
+        });
+        data.entries = data.entries.filter(function (e) { return e.kid !== id; });
+        data.edu.list = data.edu.list.filter(function (k) { return k.id !== id; });
+        data.eduRev++;
+        if (data.who === id) data.who = null;
+        persist();
+        render();
+        focusTitle();
+        toast(tr('kidRemoved'));
+        queueSync();
+      }
+    });
   }
 
   function brand() {
@@ -1845,7 +2039,7 @@
     }
     var gate = BACKEND && auth !== 'in';
     var adding = isAddRoute(route);
-    var full = gate || adding || route === 'nume' || route === 'detalii';
+    var full = gate || adding || route === 'nume' || route === 'detalii' || route === 'copil';
     var html;
     if (gate) html = auth === 'out' ? viewAuth() : auth === 'name' ? viewName(true) : viewLoading();
     else if (adding) html = viewAdd();
@@ -1853,6 +2047,7 @@
     else if (route === 'flux') html = viewFeed();
     else if (route === 'profil') html = viewProfile();
     else if (route === 'nume') html = viewName(false);
+    else if (route === 'copil') html = viewKid();
     else if (route === 'detalii') html = viewNote();
     else html = viewToday();
     appEl.classList.toggle('is-add', full);
@@ -1920,20 +2115,22 @@
   }
 
   function resetAdd(type) {
-    add = { type: type, favId: null, name: '', pts: 10, keep: false, pub: type === 'plus' && !!data.pubDefault, note: '', noteOpen: false, pic: null, picBusy: false };
+    var kid = whoNow();
+    add = { type: type, favId: null, name: '', pts: 10, keep: false, pub: !kid && type === 'plus' && !!data.pubDefault, note: '', noteOpen: false, pic: null, picBusy: false, kid: kid };
   }
 
   function enter(r) {
     if (r !== route && (isAddRoute(route) || route === 'detalii')) leaveForm(route);
     if (isAddRoute(r)) resetAdd(r);
     if (r === 'nume') nameForm = { value: data.name, busy: false, error: '' };
+    if (r === 'copil') kidForm = { value: '', error: '', back: MAIN.indexOf(route) >= 0 ? route : 'azi' };
     route = r;
     hideToast();
     if (r === 'flux' && auth === 'in') openFeed();
   }
 
   function navigate(r, replace) {
-    if (ROUTES.indexOf(r) < 0 || (r === 'detalii' && !findEntry(noteForm.id))) r = 'azi';
+    if (ROUTES.indexOf(r) < 0 || (r === 'detalii' && !findEntry(noteForm.id)) || (r === 'copil' && !eduAvail())) r = 'azi';
     if (r === route && MAIN.indexOf(r) >= 0) {
       window.scrollTo(0, 0);
       if (r === 'flux' && auth === 'in') loadFeed(true);
@@ -1976,7 +2173,11 @@
     var extra = byId('dlg-extra');
     extra.textContent = o.extra ? o.extra.label : '';
     extra.hidden = !o.extra;
-    byId('dlg-ok').textContent = o.ok;
+    var list = byId('dlg-l');
+    list.innerHTML = o.list || '';
+    list.hidden = !o.list;
+    byId('dlg-ok').textContent = o.ok || '';
+    byId('dlg-ok').hidden = !o.ok;
     byId('dlg-cancel').textContent = o.cancel;
     if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
     byId('dlg-cancel').focus();
@@ -2021,8 +2222,9 @@
     var fav = add.favId ? findFav(add.favId) : null;
     var entry = {
       id: uuid(), ts: Date.now(), day: L.dayKey(new Date()), type: add.type, pts: L.clampPts(add.pts),
-      pub: BACKEND && !!add.pub, cheers: 0, sync: 1
+      pub: BACKEND && !add.kid && !!add.pub, cheers: 0, sync: 1
     };
+    if (add.kid && findKid(add.kid)) entry.kid = add.kid;
     if (fav && fav.key && favName(fav) === name) entry.key = fav.key; else entry.name = name;
     if (note) entry.note = note;
     if (add.pic && photosOn()) {
@@ -2037,7 +2239,7 @@
       data.favs.push({ id: uuid(), type: add.type, name: name, pts: entry.pts });
       data.favsRev++;
     }
-    if (BACKEND && add.type === 'plus') data.pubDefault = !!add.pub;
+    if (BACKEND && add.type === 'plus' && !add.kid) data.pubDefault = !!add.pub;
     persist();
     navigate('azi', true);
     toast(L.fmt(L.signed(entry)) + ' · ' + nameOf(entry));
@@ -2093,7 +2295,7 @@
     if (e.photo && BACKEND) o.shot = data.uid + '/' + e.photo;
     if (photosOn()) o.link = { label: tr(e.note || e.photo ? 'moreEdit' : 'moreAdd'), fn: function () { openNote(id); } };
     else if (notesOn()) o.link = { label: tr(e.note ? 'editDetails' : 'addDetails'), fn: function () { openNote(id); } };
-    if (BACKEND) o.extra = { label: tr(e.pub ? 'makePrivate' : 'makePublic'), fn: function () { setVisibility(id, !e.pub); } };
+    if (BACKEND && !isKidEntry(e)) o.extra = { label: tr(e.pub ? 'makePrivate' : 'makePublic'), fn: function () { setVisibility(id, !e.pub); } };
     openDialog(o);
   }
 
@@ -2216,6 +2418,17 @@
       delete shots[key];
       needShot(key, key);
       shotReady(key);
+    } else if (act === 'who-open') {
+      openWho();
+    } else if (act === 'who-pick') {
+      closeDialog();
+      pickWho(id);
+    } else if (act === 'kid-new') {
+      closeDialog();
+      navigate('copil');
+      focusEnd('kid-input');
+    } else if (act === 'kid-remove') {
+      askRemoveKid(id);
     } else if (act === 'entry') {
       askEntry(id);
     } else if (act === 'day') {
@@ -2295,6 +2508,7 @@
     if (!el) return;
     if (el.id === 'auth-email') { authForm.email = el.value; return; }
     if (el.id === 'name-input') { nameForm.value = el.value; return; }
+    if (el.id === 'kid-input') { kidForm.value = el.value; var ke = byId('kid-err'); if (ke) ke.hidden = true; return; }
     if (el.id === 'act-note' || el.id === 'note-input') {
       if (el.id === 'act-note') add.note = el.value; else noteForm.value = el.value;
       var left = byId(el.id + '-n');
@@ -2317,11 +2531,12 @@
 
   function onSubmit(ev) {
     var id = ev.target && ev.target.id;
-    if (id !== 'add-form' && id !== 'auth-form' && id !== 'name-form' && id !== 'note-form') return;
+    if (id !== 'add-form' && id !== 'auth-form' && id !== 'name-form' && id !== 'note-form' && id !== 'kid-form') return;
     ev.preventDefault();
     if (id === 'add-form') saveAdd();
     else if (id === 'auth-form') submitAuth();
     else if (id === 'note-form') submitNote();
+    else if (id === 'kid-form') submitKid();
     else submitName();
   }
 
@@ -2346,6 +2561,14 @@
     document.addEventListener('input', onInput);
     document.addEventListener('change', function (ev) {
       if (ev.target && ev.target.id === 'keep-fav') { add.keep = ev.target.checked; saveDraft(); }
+      if (ev.target && ev.target.id === 'edu-on') {
+        data.edu.on = ev.target.checked;
+        data.eduRev++;
+        if (!data.edu.on) data.who = null;
+        persist();
+        render();
+        queueSync();
+      }
       if (ev.target && ev.target.id === 'pic-file') pickPhoto(ev.target);
     });
     document.addEventListener('submit', onSubmit);

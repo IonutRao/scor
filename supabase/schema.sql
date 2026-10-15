@@ -1,4 +1,4 @@
--- Scorul zilei: baza de date (versiunea 0.5: telul comun "Azi pe plus")
+-- Scorul zilei: baza de date (versiunea 0.6: modul educator)
 --
 -- Se lipeste in Supabase, la SQL Editor, si se apasa Run.
 -- Poate fi rulat din nou oricand: nu sterge si nu modifica datele existente.
@@ -97,6 +97,32 @@ end
 $$;
 create index if not exists entries_photo on public.entries (photo) where photo is not null;
 
+-- Modul educator (din versiunea 0.6): un adult tine scorul si pentru copii, care nu au conturi. Copiii sunt o lista de nume
+-- in setarile adultului (settings.kids: {"on": true, "list": [{"id", "name"}]}), iar activitatile notate pentru un copil
+-- poarta id-ul lui in entries.kid. Ele sunt intotdeauna private: nu apar in flux si nu intra in "Azi pe plus".
+alter table public.entries add column if not exists kid uuid;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'entries_kid_private' and conrelid = 'public.entries'::regclass
+  ) then
+    alter table public.entries add constraint entries_kid_private check (kid is null or not is_public);
+  end if;
+end
+$$;
+alter table public.settings add column if not exists kids jsonb;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'settings_kids_ok' and conrelid = 'public.settings'::regclass
+  ) then
+    alter table public.settings add constraint settings_kids_ok check (
+      kids is null or (jsonb_typeof(kids) = 'object' and octet_length(kids::text) <= 16000)
+    );
+  end if;
+end
+$$;
+
 -- Incurajarile: cel mult una de la un utilizator pentru o activitate.
 create table if not exists public.cheers (
   entry_id uuid not null references public.entries (id) on delete cascade,
@@ -133,12 +159,12 @@ grant insert (id, name) on public.profiles to authenticated;
 grant update (name) on public.profiles to authenticated;
 
 grant select on public.settings to authenticated;
-grant insert (user_id, favs, updated_at) on public.settings to authenticated;
-grant update (favs, updated_at) on public.settings to authenticated;
+grant insert (user_id, favs, kids, updated_at) on public.settings to authenticated;
+grant update (favs, kids, updated_at) on public.settings to authenticated;
 
 -- La activitati se pot schimba ulterior doar vizibilitatea, detaliile si poza. Numarul de incurajari nu poate fi scris de nimeni.
 grant select, delete on public.entries to authenticated;
-grant insert (id, user_id, day, ts, type, pts, key, name, is_public, lang, note) on public.entries to authenticated;
+grant insert (id, user_id, day, ts, type, pts, key, name, is_public, lang, note, kid) on public.entries to authenticated;
 grant update (is_public, note, photo) on public.entries to authenticated;
 
 grant select, delete on public.cheers to authenticated;
@@ -331,11 +357,13 @@ $$;
 --   p_favs lista de favorite, daca s-a schimbat
 --   p_note detalii schimbate sau sterse: [{id, note}]
 --   p_photo poze puse, schimbate sau scoase: [{id, photo}], unde photo este numele fisierului deja incarcat, sau null
+--   p_kids  modul educator si lista copiilor, daca s-au schimbat: {"on", "list": [{"id", "name"}]}
 -- Raspunsul poarta si versiunea acestui script (v), ca aplicatia sa stie ce poate cere.
 -- Formele vechi, cu mai putini parametri, sunt sterse: altfel ar exista mai multe functii cu acelasi nume.
 -- Aplicatiile mai vechi, care nu trimit parametrii noi, o folosesc pe cea de acum fara nicio schimbare.
 drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text);
 drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb);
+drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb);
 create or replace function public.sync(
   p_add jsonb default '[]'::jsonb,
   p_del jsonb default '[]'::jsonb,
@@ -343,7 +371,8 @@ create or replace function public.sync(
   p_favs jsonb default null,
   p_lang text default 'ro',
   p_note jsonb default '[]'::jsonb,
-  p_photo jsonb default '[]'::jsonb
+  p_photo jsonb default '[]'::jsonb,
+  p_kids jsonb default null
 ) returns jsonb
 language plpgsql security invoker set search_path = '' as $$
 declare
@@ -352,8 +381,10 @@ declare
   v_uuid constant text := '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$';
   v_photo constant text := '^[0-9a-f]{16}-[0-9]{1,4}x[0-9]{1,4}\.jpg$';
   v_item jsonb;
+  v_kid uuid;
   v_rejected jsonb := '[]'::jsonb;
   v_favs jsonb;
+  v_kids jsonb;
 begin
   if v_uid is null then
     raise exception 'not_signed_in';
@@ -368,8 +399,16 @@ begin
     end if;
     for v_item in select x from jsonb_array_elements(p_add) x loop
       begin
+        -- Activitatea unui copil poarta id-ul lui; unul care nu arata a id respinge activitatea, ca sa nu ajunga la adult.
+        v_kid := null;
+        if v_item ? 'kid' and jsonb_typeof(v_item->'kid') <> 'null' then
+          if not ((v_item->>'kid') ~ v_uuid) then
+            raise exception 'bad_kid';
+          end if;
+          v_kid := (v_item->>'kid')::uuid;
+        end if;
         -- Poza nu vine niciodata odata cu activitatea: contul afla de ea prin p_photo, dupa ce fisierul ei exista.
-        insert into public.entries (id, user_id, day, ts, type, pts, key, name, is_public, lang, note)
+        insert into public.entries (id, user_id, day, ts, type, pts, key, name, is_public, lang, note, kid)
         values (
           (v_item->>'id')::uuid,
           v_uid,
@@ -379,9 +418,10 @@ begin
           (v_item->>'pts')::smallint,
           v_item->>'key',
           v_item->>'name',
-          coalesce((v_item->>'pub')::boolean, false),
+          case when v_kid is not null then false else coalesce((v_item->>'pub')::boolean, false) end,
           v_lang,
-          public.note_text(v_item->>'note')
+          public.note_text(v_item->>'note'),
+          v_kid
         )
         on conflict (id) do nothing;
       exception when others then
@@ -410,7 +450,7 @@ begin
       from jsonb_array_elements(p_vis) x
       where jsonb_typeof(x) = 'object' and (x->>'pub') in ('true', 'false')
     ) v
-    where e.user_id = v_uid and e.id = v.id;
+    where e.user_id = v_uid and e.id = v.id and e.kid is null;
   end if;
 
   -- Detalii schimbate dupa notare. Cu text gol sau cu null, detaliile se sterg. Orice altceva este ignorat.
@@ -461,7 +501,12 @@ begin
     on conflict (user_id) do update set favs = excluded.favs, updated_at = excluded.updated_at;
   end if;
 
-  select s.favs into v_favs from public.settings s where s.user_id = v_uid;
+  if p_kids is not null and jsonb_typeof(p_kids) = 'object' then
+    insert into public.settings (user_id, kids, updated_at) values (v_uid, p_kids, now())
+    on conflict (user_id) do update set kids = excluded.kids, updated_at = excluded.updated_at;
+  end if;
+
+  select s.favs, s.kids into v_favs, v_kids from public.settings s where s.user_id = v_uid;
 
   -- Numele afisat vine si el cu starea contului: schimbat de pe alt dispozitiv, ajunge astfel si pe acesta.
   return jsonb_build_object(
@@ -470,14 +515,15 @@ begin
       select jsonb_agg(jsonb_build_object(
         'id', e.id, 'day', e.day, 'ts', (extract(epoch from e.ts) * 1000)::bigint,
         'type', e.type, 'pts', e.pts, 'key', e.key, 'name', e.name,
-        'pub', e.is_public, 'cheers', e.cheers_count, 'note', e.note, 'photo', e.photo
+        'pub', e.is_public, 'cheers', e.cheers_count, 'note', e.note, 'photo', e.photo, 'kid', e.kid
       ) order by e.ts desc)
       from public.entries e where e.user_id = v_uid
     ), '[]'::jsonb),
     'favs', v_favs,
+    'kids', v_kids,
     'rejected', v_rejected,
     'now', (extract(epoch from now()) * 1000)::bigint,
-    'v', 5
+    'v', 6
   );
 end
 $$;
@@ -505,7 +551,7 @@ language sql stable security invoker set search_path = '' as $$
       ) as cheered
     from public.entries e
     join public.profiles p on p.id = e.user_id
-    where e.is_public
+    where e.is_public and e.kid is null
       and (p_lang is null or e.lang = p_lang)
       and (p_before is null or e.ts < to_timestamp(p_before / 1000.0))
     order by e.ts desc
@@ -582,7 +628,7 @@ begin
     join public.profiles p on p.id = m.user_id
     where (
       select coalesce(sum(case when e.type = 'plus' then e.pts else -e.pts end), 0)
-      from public.entries e where e.user_id = m.user_id and e.day = v_day
+      from public.entries e where e.user_id = m.user_id and e.day = v_day and e.kid is null
     ) > 0
     limit 100
   ) x;
@@ -593,7 +639,7 @@ begin
     'up', v_up,
     'others', v_others,
     'you', v_you,
-    'v', 5
+    'v', 6
   );
 end
 $$;
@@ -615,7 +661,7 @@ $$;
 revoke all on function public.me() from public, anon;
 revoke all on function public.set_name(text) from public, anon;
 revoke all on function public.note_text(text) from public, anon;
-revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb) from public, anon;
+revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb) from public, anon;
 revoke all on function public.feed(text, bigint, integer) from public, anon;
 revoke all on function public.cheer(uuid, boolean) from public, anon;
 revoke all on function public.delete_my_account() from public, anon;
@@ -626,7 +672,7 @@ revoke all on function public.tg_entries_clamp() from public, anon, authenticate
 grant execute on function public.me() to authenticated;
 grant execute on function public.set_name(text) to authenticated;
 grant execute on function public.note_text(text) to authenticated;
-grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb) to authenticated;
+grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb) to authenticated;
 grant execute on function public.feed(text, bigint, integer) to authenticated;
 grant execute on function public.cheer(uuid, boolean) to authenticated;
 grant execute on function public.delete_my_account() to authenticated;

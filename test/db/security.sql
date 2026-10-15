@@ -179,7 +179,7 @@ select t.ok((select count(*) from public.profiles) = 3, 'numele celor trei utili
 
 -- ---------------------------------------------------------------- detalii
 select t.be(t.a());
-select t.ok((public.sync()->>'v')::int = 5, 'raspunsul lui sync() poarta versiunea scriptului');
+select t.ok((public.sync()->>'v')::int = 6, 'raspunsul lui sync() poarta versiunea scriptului');
 select t.ok(public.sync()->>'name' = 'Ana', 'si numele afisat');
 select t.ok(
   public.sync(p_add => jsonb_build_array(
@@ -343,7 +343,7 @@ select t.ok((select count(*) from storage.objects) = 0, 'dupa curatenie nu mai r
 -- Participarea este la alegere. Ceilalti afla un singur lucru despre un participant: daca ziua lui este pe plus.
 -- Suma zilei cuprinde si activitatile private, dar ele nu ies niciodata la vedere.
 select t.be(t.a());
-select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'others', '[]'::jsonb, 'you', false, 'v', 5),
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'others', '[]'::jsonb, 'you', false, 'v', 6),
   'la inceput nimeni nu participa, iar raspunsul poarta versiunea scriptului');
 select t.ok(public.pulse(p_day => current_date, p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'Ana intra in joc');
 select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'a doua intrare nu o numara de doua ori');
@@ -352,7 +352,7 @@ select t.ok((select coalesce(sum(case when type = 'plus' then pts else -pts end)
 select t.ok(public.pulse()->'up' = jsonb_build_array('Ana') and public.pulse()->'others' = '[]'::jsonb and public.pulse()->'you' = 'true'::jsonb,
   'Ana se vede pe lista celor pe plus: pentru ea, ceilalti sunt niciunul, iar you este adevarat');
 select t.be(t.b());
-select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', jsonb_build_array('Ana'), 'you', false, 'v', 5),
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', jsonb_build_array('Ana'), 'you', false, 'v', 6),
   'Bogdan, fara sa participe, vede cati participa si cine e pe plus');
 select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 2 and public.pulse()->'up' = jsonb_build_array('Ana'),
   'Bogdan intra: doi participanti, dar fara activitati azi nu este pe plus');
@@ -379,6 +379,44 @@ select t.be_anon();
 select t.fails($$select public.pulse()$$, '42501', 'neautentificat: functia nu poate fi apelata');
 select t.be(t.b());
 select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(95), t.e(96), t.e(97)))->'entries') >= 0, 'Bogdan isi sterge activitatile de proba');
+reset role;
+
+-- ---------------------------------------------------------------- modul educator
+-- Activitatile notate pentru un copil poarta id-ul lui si raman private orice s-ar cere; copiii sunt o lista in setari.
+select t.be(t.a());
+select t.ok(public.sync(p_kids => '{"on": true, "list": [{"id": "cccccccc-0000-4000-8000-000000000001", "name": "Maria"}]}'::jsonb)->'kids'
+    = '{"on": true, "list": [{"id": "cccccccc-0000-4000-8000-000000000001", "name": "Maria"}]}'::jsonb,
+  'Ana porneste modul educator cu un copil; lista se intoarce odata cu starea contului');
+select t.ok(public.sync()->'kids'->'on' = 'true'::jsonb, 'lista ramane si fara sa fie trimisa din nou');
+select t.ok(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(40), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Teme facute', 'pub', true, 'kid', 'cccccccc-0000-4000-8000-000000000001'),
+    jsonb_build_object('id', t.e(41), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 5, 'name', 'Nu a strans jucariile', 'kid', 'cccccccc-0000-4000-8000-000000000001'),
+    jsonb_build_object('id', t.e(42), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Id de copil gresit', 'kid', 'maria'),
+    jsonb_build_object('id', t.e(43), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Fara copil', 'kid', null, 'pub', true)
+  ))->'rejected' = jsonb_build_array(t.e(42)),
+  'activitatile Mariei intra; una cu un id de copil gresit este respinsa, nu trecuta pe numele Anei; kid null inseamna activitatea Anei');
+select t.ok((select kid::text || '/' || is_public::text from public.entries where id = t.e(40)) = 'cccccccc-0000-4000-8000-000000000001/false',
+  'activitatea Mariei este privata, desi fusese ceruta publica');
+select t.ok((select kid is null and is_public from public.entries where id = t.e(43)), 'activitatea Anei fara copil este a ei si publica');
+select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(40), 'pub', true)))->'entries' @> jsonb_build_array(jsonb_build_object('id', t.e(40), 'pub', false, 'kid', 'cccccccc-0000-4000-8000-000000000001')),
+  'o activitate de copil nu poate fi facuta publica prin sync');
+select t.fails($$update public.entries set is_public = true where id = t.e(40)$$, '23514', 'nici direct in tabela');
+select t.ok(not (public.feed()::text ~ 'Teme facute') and (public.feed()::text ~ 'Fara copil'), 'in flux nu apar activitatile copiilor, doar ale Anei');
+select t.ok((select coalesce(sum(case when type = 'plus' then pts else -pts end), 0) from public.entries where user_id = t.a() and day = current_date and kid is null) > 0,
+  'inainte: ziua Anei, fara copii, este pe plus');
+update public.entries set is_public = false where user_id = t.a() and kid is null and day = current_date;
+select t.ok(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(44), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 20, 'name', 'A Anei, pe minus'),
+    jsonb_build_object('id', t.e(45), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 20, 'name', 'A Anei, pe minus 2'),
+    jsonb_build_object('id', t.e(46), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 20, 'name', 'A Anei, pe minus 3'),
+    jsonb_build_object('id', t.e(47), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 20, 'name', 'A Mariei, pe plus', 'kid', 'cccccccc-0000-4000-8000-000000000001'),
+    jsonb_build_object('id', t.e(48), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 20, 'name', 'A Mariei, pe plus 2', 'kid', 'cccccccc-0000-4000-8000-000000000001'),
+    jsonb_build_object('id', t.e(49), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 20, 'name', 'A Mariei, pe plus 3', 'kid', 'cccccccc-0000-4000-8000-000000000001')
+  ))->'rejected' = '[]'::jsonb, 'Ana coboara pe minus, Maria urca mult pe plus');
+select t.ok(not (public.pulse()->'up' ? 'Ana'), 'in "Azi pe plus" se numara doar activitatile Anei, nu si ale copiilor ei');
+select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(40), t.e(41), t.e(43), t.e(44), t.e(45), t.e(46), t.e(47), t.e(48), t.e(49)))->'entries') >= 0, 'activitatile de proba se sterg');
+select t.ok(public.sync(p_kids => '{"on": false, "list": []}'::jsonb)->'kids'->'on' = 'false'::jsonb, 'modul educator se poate opri');
+select t.ok(public.sync(p_kids => '"text"'::jsonb)->'kids'->'on' = 'false'::jsonb, 'o lista care nu arata a lista este ignorata (ramane cea veche)');
 reset role;
 
 -- ---------------------------------------------------------------- stergerea contului

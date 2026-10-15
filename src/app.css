@@ -47,6 +47,15 @@ h1:focus { outline: none; }
 .head-add { align-items: center; }
 .icon-btn { flex: none; width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; color: var(--ink); }
 .head-add .icon-btn { margin-right: -10px; }
+/* The "who" button of the educator mode sits at the right end of every header; with it, the subtitle wraps under the title */
+.head-end { flex: none; display: flex; align-items: center; gap: 6px; }
+.head.has-who { flex-wrap: wrap; align-items: center; }
+.head.has-who .head-sub { flex-basis: 100%; text-align: left; margin-top: -4px; }
+.who { min-height: 34px; padding: 0 8px 0 12px; border-radius: 17px; display: inline-flex; align-items: center; gap: 2px; background: var(--control); color: var(--ink); font-size: 13px; font-weight: 700; max-width: 46vw; }
+.who > svg { flex: none; }
+.who.kid { background: var(--ink); color: var(--on-ink); }
+.for-kid { margin: -6px 0 12px; font-size: 14px; font-weight: 700; color: var(--muted); }
+.sub-h { margin-top: 14px; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
 
 /* Example data notice */
 .demo { margin-top: 8px; padding: 4px 6px 4px 16px; border-radius: 16px; background: var(--gold); color: var(--ink); display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; font-weight: 600; }
@@ -214,6 +223,11 @@ button.row:active { opacity: .6; }
 .dlg p { margin-top: 6px; font-size: 14px; color: var(--muted); }
 .dlg .dlg-note { margin-top: 14px; padding: 10px 14px; border-radius: 14px; background: var(--bg); white-space: pre-line; overflow-wrap: anywhere; font-size: 15px; line-height: 1.45; color: var(--ink); }
 .dlg-shot { margin-top: 12px; }
+.dlg-list { margin-top: 10px; }
+.dlg-list .row { width: 100%; min-height: 48px; }
+.dlg-list .row[aria-pressed="true"] .row-t { font-weight: 700; }
+.dlg-list .pill { min-width: 32px; }
+.dlg-list .dlg-link { margin: 6px 0 -6px -6px; }
 
 /* The in-app camera: the live picture fills the screen, the shutter sits at the bottom */
 .cam { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; background: #000; color: #fff; }
