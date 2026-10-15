@@ -156,6 +156,9 @@ try:
         go(a, "azi")
         a.click('[data-act="who-open"]')
         check(a.locator('#dlg-l [data-act="who-pick"]').count() == 2 and a.locator('#dlg-l [data-act="kid-new"]').count() == 1, "lista de ales: Eu, Maria si Adauga copil")
+        rows = [" ".join(r.split()) for r in a.locator('#dlg-l [data-act="who-pick"]').all_inner_texts()]
+        check(rows[0].startswith("Eu") and rows[0].endswith("−5") and "zi" not in rows[0], "langa Eu: scorul de azi, fara serie (ziua e pe minus): " + rows[0])
+        check(rows[1].startswith("Maria") and "1 zi" in rows[1] and rows[1].endswith("+5"), "langa Maria: seria de o zi si scorul de azi: " + rows[1])
         shot(a, "e05-alegere.png")
         a.click('#dlg-l [data-act="kid-new"]')
         soft(lambda: a.wait_for_selector("#kid-input", timeout=8000), "Adauga copil din lista deschide ecranul copilului nou")

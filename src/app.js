@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.6';
+  var VERSION = '0.6.1';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -1889,15 +1889,24 @@
   }
 
   /* Alegerea celui pentru care se noteaza, din butonul de sus: Eu, copiii, Adauga copil. */
+  /* Lista "Pentru cine?" este si privirea de ansamblu: langa fiecare nume, scorul de azi si seria pe plus.
+     Ordinea este cea in care au fost adaugati copiii, niciodata dupa scor: fiecare se compara cu el insusi, nu cu ceilalti. */
+  function whoRow(id, label, on) {
+    var today = L.dayKey(new Date());
+    var t = L.totals(data.entries.filter(function (e) { return (e.kid || null) === (id || null); }));
+    var total = t[today] || 0, streak = L.currentStreak(t, today);
+    return '<button type="button" class="row" data-act="who-pick" data-id="' + esc(id) + '" aria-pressed="' + on + '">' +
+      '<span class="row-main"><span class="row-t">' + esc(label) + (on ? ' <span class="who-on" aria-hidden="true">✓</span>' : '') + '</span>' +
+        (streak > 0 ? '<span class="row-s who-streak">' + ICON.flameFlat + esc(count(streak, tr('day'))) + '</span>' : '') + '</span>' +
+      '<span class="pill ' + kind(total) + '">' + L.fmt(total) + '</span></button>';
+  }
+
   function openWho() {
-    var who = whoNow(), list = [{ id: '', label: tr('me'), on: !who }];
-    data.edu.list.forEach(function (k) { list.push({ id: k.id, label: k.name, on: who === k.id }); });
+    var who = whoNow(), rows = [whoRow('', tr('me'), !who)];
+    data.edu.list.forEach(function (k) { rows.push(whoRow(k.id, k.name, who === k.id)); });
     openDialog({
       title: tr('whoFor'), cancel: tr('close'),
-      list: list.map(function (it) {
-        return '<button type="button" class="row" data-act="who-pick" data-id="' + esc(it.id) + '" aria-pressed="' + it.on + '"><span class="row-main"><span class="row-t">' + esc(it.label) + '</span></span>' +
-          (it.on ? '<span class="pill plus">✓</span>' : '') + '</button>';
-      }).join('') + (data.edu.list.length < KIDS_MAX ? '<button type="button" class="link dlg-link" data-act="kid-new">' + esc(tr('kidAdd')) + '</button>' : '')
+      list: rows.join('') + (data.edu.list.length < KIDS_MAX ? '<button type="button" class="link dlg-link" data-act="kid-new">' + esc(tr('kidAdd')) + '</button>' : '')
     });
   }
 

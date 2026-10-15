@@ -226,7 +226,10 @@ button.row:active { opacity: .6; }
 .dlg-list { margin-top: 10px; }
 .dlg-list .row { width: 100%; min-height: 48px; }
 .dlg-list .row[aria-pressed="true"] .row-t { font-weight: 700; }
-.dlg-list .pill { min-width: 32px; }
+.dlg-list .pill { min-width: 44px; text-align: center; }
+.who-on { color: var(--plus-text); font-weight: 800; }
+.who-streak { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; }
+.who-streak svg { fill: var(--gold); }
 .dlg-list .dlg-link { margin: 6px 0 -6px -6px; }
 
 /* The in-app camera: the live picture fills the screen, the shutter sits at the bottom */
