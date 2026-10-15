@@ -558,7 +558,7 @@ var T = {
     refresh: 'Actualizează', moreFeed: 'Mai multe', loading: 'Se încarcă...',
     feedEmpty: 'Încă nu a apărut nimic aici.', feedEmptyHint: 'Arată în flux o faptă bună și va fi prima.',
     feedOffline: 'Fluxul are nevoie de internet.', feedError: 'Fluxul nu a putut fi încărcat.', retry: 'Încearcă din nou',
-    cheer: 'Încurajează', cheered: 'Încurajat', yours: 'activitatea ta', beFirst: 'Fii primul care încurajează',
+    cheer: 'Încurajează', cheered: 'Încurajat', cheerMinus: 'Mâine mai bine', cheeredMinus: 'Trimis', yours: 'activitatea ta', beFirst: 'Fii primul care încurajează', beFirstMinus: 'Spune-i tu primul',
     cheersMine1: 'o încurajare, de la tine', cheersMine: '{x}, una de la tine', cheersNone: 'nicio încurajare încă',
     now: 'chiar acum', ago: 'acum {x}', yesterday: 'ieri',
     days: ['duminică', 'luni', 'marți', 'miercuri', 'joi', 'vineri', 'sâmbătă'],
@@ -650,7 +650,7 @@ var T = {
     refresh: 'Refresh', moreFeed: 'More', loading: 'Loading...',
     feedEmpty: 'Nothing here yet.', feedEmptyHint: 'Show a good deed in the feed and it will be the first.',
     feedOffline: 'The feed needs an internet connection.', feedError: 'The feed could not be loaded.', retry: 'Try again',
-    cheer: 'Cheer', cheered: 'Cheered', yours: 'your activity', beFirst: 'Be the first to cheer',
+    cheer: 'Cheer', cheered: 'Cheered', cheerMinus: 'Better tomorrow', cheeredMinus: 'Sent', yours: 'your activity', beFirst: 'Be the first to cheer', beFirstMinus: 'Say it first',
     cheersMine1: '1 cheer, from you', cheersMine: '{x}, one from you', cheersNone: 'no cheers yet',
     now: 'just now', ago: '{x} ago', yesterday: 'yesterday',
     days: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
@@ -1238,7 +1238,7 @@ var CAM = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.6.1';
+  var VERSION = '0.6.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -2961,7 +2961,7 @@ var CAM = (function () {
 
   function cheersText(it) {
     var n = it.cheers || 0;
-    if (!n) return tr(it.mine ? 'cheersNone' : 'beFirst');
+    if (!n) return tr(it.mine ? 'cheersNone' : it.type === 'minus' ? 'beFirstMinus' : 'beFirst');
     if (it.cheered) return n === 1 ? tr('cheersMine1') : tr('cheersMine', { x: count(n, tr('cheerForms')) });
     return count(n, tr('cheerForms'));
   }
@@ -2995,7 +2995,7 @@ var CAM = (function () {
             (it.mine
               ? '<span class="post-n">' + esc(tr('yours')) + '</span>'
               : '<button type="button" class="cheer" aria-pressed="' + !!it.cheered + '" data-act="cheer" data-id="' + esc(it.id) + '" data-focus="c-' + esc(it.id) + '">' +
-                ICON.starLine + esc(tr(it.cheered ? 'cheered' : 'cheer')) + '</button>') +
+                ICON.starLine + esc(tr(it.type === 'minus' ? (it.cheered ? 'cheeredMinus' : 'cheerMinus') : (it.cheered ? 'cheered' : 'cheer'))) + '</button>') +
           '</div></li>';
       }).join('') + '</ul>' +
         (feed.error ? '<p class="note feed">' + esc(tr(feed.error === 'offline' ? 'feedOffline' : 'feedError')) + '</p>' : '') +

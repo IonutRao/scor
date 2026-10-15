@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.6.2: la o faptă mai puțin bună făcută publică, butonul din flux spune „Mâine mai bine”, nu „Încurajează”.
 - 0.6.1: în lista „Pentru cine?”, lângă fiecare nume apar scorul de azi și seria pe plus.
 - 0.6: modul educator: cine ține scorul și pentru copii bifează în Profil, adaugă copiii pe nume și alege din colțul oricărui ecran pentru cine notează. Activitățile copiilor rămân private. Cere rularea din nou a scriptului `supabase/schema.sql`.
 - 0.5.2: fluxul arată doar activitățile în limba aleasă în aplicație; butonul „Toate limbile” a dispărut.

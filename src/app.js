@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.6.1';
+  var VERSION = '0.6.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -1728,7 +1728,7 @@
 
   function cheersText(it) {
     var n = it.cheers || 0;
-    if (!n) return tr(it.mine ? 'cheersNone' : 'beFirst');
+    if (!n) return tr(it.mine ? 'cheersNone' : it.type === 'minus' ? 'beFirstMinus' : 'beFirst');
     if (it.cheered) return n === 1 ? tr('cheersMine1') : tr('cheersMine', { x: count(n, tr('cheerForms')) });
     return count(n, tr('cheerForms'));
   }
@@ -1762,7 +1762,7 @@
             (it.mine
               ? '<span class="post-n">' + esc(tr('yours')) + '</span>'
               : '<button type="button" class="cheer" aria-pressed="' + !!it.cheered + '" data-act="cheer" data-id="' + esc(it.id) + '" data-focus="c-' + esc(it.id) + '">' +
-                ICON.starLine + esc(tr(it.cheered ? 'cheered' : 'cheer')) + '</button>') +
+                ICON.starLine + esc(tr(it.type === 'minus' ? (it.cheered ? 'cheeredMinus' : 'cheerMinus') : (it.cheered ? 'cheered' : 'cheer'))) + '</button>') +
           '</div></li>';
       }).join('') + '</ul>' +
         (feed.error ? '<p class="note feed">' + esc(tr(feed.error === 'offline' ? 'feedOffline' : 'feedError')) + '</p>' : '') +

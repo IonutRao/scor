@@ -838,6 +838,24 @@ try:
         check(not sent_notes, "aplicatia nu trimite niciodata schimbari de detalii unui server vechi")
         ctx_o.close()
 
+        # ------------------------------------------------------------ o fapta mai putin buna, publica
+        # Cine isi recunoaste public o scapare nu primeste "Incurajeaza", ci "Maine mai bine"; se numara la fel.
+        add(ma, "minus", name="Am sărit peste antrenament", public=True)
+        soft(lambda: saved(ma), "Maria noteaza public o fapta mai putin buna")
+        ne.click('[data-act="feed-refresh"]')
+        post = '#feed-list .post:has-text("Am sărit peste antrenament")'
+        soft(lambda: wait_count(ne, post, 1), "ea apare in fluxul lui Nelu")
+        check("−" in text(ne, post + " .pill") and text(ne, post + " .cheer") == "Mâine mai bine", "butonul ei spune Maine mai bine, nu Incurajeaza")
+        check("Spune-i tu primul" in text(ne, post + " .post-n"), "si invitatia este pe masura")
+        shot(ne, "c17-minus-public.png")
+        no_overflow(ne, "flux cu minus public 390")
+        ne.click(post + " .cheer")
+        soft(lambda: wait_text(ne, post + " .cheer", "Trimis"), "dupa apasare butonul spune Trimis")
+        soft(lambda: wait_text(ne, post + " .post-n", "o încurajare, de la tine"), "se numara ca o incurajare")
+        ne.wait_for_timeout(500)
+        check(db("select cheers_count from public.entries where name = 'Am sărit peste antrenament'") == "1", "in baza: o incurajare pe ea")
+        check(text(ne, '#feed-list .post:has-text("Am ajutat un coleg") .cheer') == "Încurajat", "faptele bune pastreaza Incurajeaza / Incurajat")
+
         urllib.request.urlopen(BASE + "/__test/set?feed=0").read()
         ctx_ma.close()
         ctx_ne.close()
