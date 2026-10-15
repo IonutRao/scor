@@ -532,7 +532,6 @@ var T = {
     pulseWhy: 'Un țel comun: toți pe plus la finalul zilei. Despre tine se vede un singur lucru, dacă ești pe plus azi.',
     pulseJoined: 'Participi la „Azi pe plus”', pulseLeft: 'Nu mai participi',
     weekOf: '{n} din {m} zile pe plus', weekTodayUp: 'prima zi, și e pe plus', weekTodayNot: 'prima zi, încă nu e pe plus', weekBest: 'cea mai bună zi: {d}, {v}', weekNoPlus: 'nicio zi pe plus încă',
-    feedLang: 'Limba activităților', myLang: 'Limba mea', allLangs: 'Toate limbile',
     refresh: 'Actualizează', moreFeed: 'Mai multe', loading: 'Se încarcă...',
     feedEmpty: 'Încă nu a apărut nimic aici.', feedEmptyHint: 'Arată în flux o faptă bună și va fi prima.',
     feedOffline: 'Fluxul are nevoie de internet.', feedError: 'Fluxul nu a putut fi încărcat.', retry: 'Încearcă din nou',
@@ -620,7 +619,6 @@ var T = {
     pulseWhy: 'A shared goal: everyone on plus by the end of the day. Only one thing about you is shown, whether you are on plus today.',
     pulseJoined: 'You are in “On plus today”', pulseLeft: 'You left',
     weekOf: '{n} of {m} days on plus', weekTodayUp: 'first day, and it is on plus', weekTodayNot: 'first day, not on plus yet', weekBest: 'best day: {d}, {v}', weekNoPlus: 'no day on plus yet',
-    feedLang: 'Activity language', myLang: 'My language', allLangs: 'All languages',
     refresh: 'Refresh', moreFeed: 'More', loading: 'Loading...',
     feedEmpty: 'Nothing here yet.', feedEmptyHint: 'Show a good deed in the feed and it will be the first.',
     feedOffline: 'The feed needs an internet connection.', feedError: 'The feed could not be loaded.', retry: 'Try again',
@@ -1212,7 +1210,7 @@ var CAM = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.5.1';
+  var VERSION = '0.5.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -1361,7 +1359,7 @@ var CAM = (function () {
   function isAddRoute(r) { return r === 'plus' || r === 'minus'; }
   function newFeed() {
     feedSeq++;
-    return { items: [], loading: false, quiet: false, started: 0, ready: false, error: '', all: false, done: true, at: 0, tried: 0, fails: 0 };
+    return { items: [], loading: false, quiet: false, started: 0, ready: false, error: '', done: true, at: 0, tried: 0, fails: 0 };
   }
 
   function uuid() {
@@ -2098,7 +2096,7 @@ var CAM = (function () {
     feed.started = sent;
     if (reset) { feed.error = ''; feed.tried = sent; }
     var before = !reset && feed.items.length ? Number(feed.items[feed.items.length - 1].ts) : null;
-    API.rpc('feed', { p_lang: feed.all ? null : lang, p_before: before, p_limit: FEED_PAGE }).then(function (rows) {
+    API.rpc('feed', { p_lang: lang, p_before: before, p_limit: FEED_PAGE }).then(function (rows) {
       if (seq !== feedSeq) return;
       rows = Array.isArray(rows) ? rows : [];
       if (reset) {
@@ -2136,7 +2134,7 @@ var CAM = (function () {
     feed.quiet = true;
     feed.started = sent;
     feed.tried = sent;
-    API.rpc('feed', { p_lang: feed.all ? null : lang, p_before: null, p_limit: limit }).then(function (rows) {
+    API.rpc('feed', { p_lang: lang, p_before: null, p_limit: limit }).then(function (rows) {
       if (seq !== feedSeq) return;
       feed.quiet = false;
       if (!Array.isArray(rows)) { feed.fails++; return; }
@@ -2898,11 +2896,8 @@ var CAM = (function () {
       '<section class="gold" aria-label="' + esc(tr('cheersGot')) + '"><div><div class="gold-t">' + esc(tr('cheersGot')) + '</div><div class="gold-s">' + esc(tr('cheersGotSub')) + '</div></div>' +
         '<div class="gold-n" id="cheers-got">' + ICON.starFlat + myCheers() + '</div></section>' +
       viewPulse() +
+      /* Fluxul arata doar activitatile in limba aleasa in aplicatie; limba se schimba din Profil. */
       '<div class="feed-bar">' +
-        '<div class="seg small" role="group" aria-label="' + esc(tr('feedLang')) + '">' +
-          '<button type="button" class="seg-b" aria-pressed="' + !feed.all + '" data-act="feed-lang" data-all="0" data-focus="fl-0">' + esc(tr('myLang')) + '</button>' +
-          '<button type="button" class="seg-b" aria-pressed="' + !!feed.all + '" data-act="feed-lang" data-all="1" data-focus="fl-1">' + esc(tr('allLangs')) + '</button>' +
-        '</div>' +
         '<button type="button" class="link" data-act="feed-refresh" data-focus="feed-refresh">' + esc(tr(feed.loading && feed.ready ? 'loading' : 'refresh')) + '</button>' +
       '</div>' + body;
   }
@@ -3486,12 +3481,6 @@ var CAM = (function () {
       pumpFails = 0;
       queuePump(0);
       sync();
-    } else if (act === 'feed-lang') {
-      var all = b.getAttribute('data-all') === '1';
-      if (all === feed.all && feed.ready) return;
-      feed = newFeed();
-      feed.all = all;
-      loadFeed(true);
     } else if (act === 'pulse-join' || act === 'pulse-leave') {
       loadPulse(act === 'pulse-join');
       showFeed();

@@ -363,9 +363,11 @@ try:
         a.click('#nav a[data-route="flux"]')
         soft(lambda: wait_text(a, "#feed-empty", "Nothing here yet"), "in engleza, filtrul pe limba mea ascunde activitatile romanesti")
         check(text(a, "h1") == "Feed", "fluxul in engleza")
-        a.click('[data-act="feed-lang"][data-all="1"]')
-        soft(lambda: wait_count(a, "#feed-list .post", 2), "Toate limbile le arata din nou")
-        check("Gym" in text(a, "#feed-list") and "Cheered" in text(a, "#feed-list"), "numele favoritelor si butoanele sunt traduse")
+        check(a.locator('[data-act="feed-lang"]').count() == 0, "nu mai exista un buton pentru toate limbile: fluxul urmeaza limba aplicatiei")
+        add(a, "plus", fav="Gym", public=True)
+        a.click('#nav a[data-route="flux"]')
+        soft(lambda: wait_count(a, "#feed-list .post", 1), "o activitate notata in engleza apare in fluxul englezesc")
+        check("Gym" in text(a, "#feed-list") and "your activity" in text(a, "#feed-list"), "numele favoritelor si textele sunt traduse")
         shot(a, "c11-feed-en.png")
         a.set_viewport_size({"width": 320, "height": 700})
         no_overflow(a, "feed 320")
@@ -455,7 +457,7 @@ try:
         db("insert into public.entries (id, user_id, day, ts, type, pts, name, is_public, lang) "
            "select gen_random_uuid(), p.id, ((now() - interval '2 days') at time zone 'UTC')::date, date_trunc('milliseconds', now() - interval '2 days'), "
            "'plus', 5, 'Morning walk', true, 'en' from public.profiles p where p.name = 'Gina'")
-        check(db("select count(*) from public.entries where is_public") == "62", "in baza: 62 de activitati publice, una in engleza")
+        check(db("select count(*) || '/' || count(*) filter (where lang = 'en') from public.entries where is_public") == "63/2", "in baza: 63 de activitati publice, doua in engleza")
 
         ctx_f, f = new_page()
         feed_calls = []
@@ -595,12 +597,14 @@ try:
         f.unroute("**/rest/v1/rpc/feed")
         soft(lambda: wait_text(f, "#feed-list .post", "Plimbare", 15000), "cand serverul raspunde din nou, fluxul isi revine singur")
 
-        # Un raspuns intarziat pentru filtrul vechi nu ajunge in lista filtrului nou.
+        # Un raspuns intarziat pentru limba veche nu ajunge in lista limbii noi.
         late = []
         f.route("**/rest/v1/rpc/feed", lambda r: hold_first(r, late))
-        soft(lambda: until(f, lambda: len(late) == 1, "o cerere de flux pe Limba mea oprita pe drum", 12000), "o cerere pentru Limba mea este tinuta pe drum")
-        f.click('[data-act="feed-lang"][data-all="1"]')
-        soft(lambda: wait_count(f, '#feed-list .post:has-text("Morning walk")', 1), "Toate limbile arata si activitatea in engleza")
+        soft(lambda: until(f, lambda: len(late) == 1, "o cerere de flux in romana oprita pe drum", 12000), "o cerere pentru fluxul in romana este tinuta pe drum")
+        f.click('#nav a[data-route="profil"]')
+        f.click('[data-lang="en"]')
+        f.click('#nav a[data-route="flux"]')
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Morning walk")', 1), "in engleza, fluxul arata activitatea in engleza")
         f.evaluate("""() => {
           window.__lost = 0;
           new MutationObserver(() => {
@@ -611,9 +615,11 @@ try:
         late[0][0].fulfill(response=late[0][1])
         f.wait_for_timeout(1500)
         f.unroute("**/rest/v1/rpc/feed")
-        check(f.evaluate("() => window.__lost") == 0 and f.locator('#feed-list .post:has-text("Morning walk")').count() == 1, "raspunsul intarziat pentru filtrul vechi nu strica lista noua")
-        f.click('[data-act="feed-lang"][data-all="0"]')
-        soft(lambda: wait_count(f, '#feed-list .post:has-text("Morning walk")', 0), "inapoi pe Limba mea, activitatea in engleza dispare")
+        check(f.evaluate("() => window.__lost") == 0 and f.locator('#feed-list .post:has-text("Morning walk")').count() == 1, "raspunsul intarziat pentru limba veche nu strica lista noua")
+        f.click('#nav a[data-route="profil"]')
+        f.click('[data-lang="ro"]')
+        f.click('#nav a[data-route="flux"]')
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Morning walk")', 0), "inapoi in romana, activitatea in engleza dispare")
         soft(lambda: wait_text(f, "#feed-list .post", "Plimbare"), "iar lista in romana este la zi")
 
         # Dupa o pauza lunga pot fi mai multe noutati decat incap intr-un raspuns: lista nu ramane cu un gol in ea.
