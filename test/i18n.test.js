@@ -47,13 +47,14 @@ Object.keys(T).forEach((lang) => {
   assert.strictEqual(T[lang].daysShort.length, 7);
   assert.strictEqual(T[lang].months.length, 12);
   ['day', 'activity', 'minute', 'hour', 'cheerForms', 'changeForms'].forEach((k) => assert.strictEqual(T[lang][k].length, 2, lang + ': ' + k));
-  assert.strictEqual(Object.keys(T[lang].fav).length, 12);
+  assert.strictEqual(Object.keys(T[lang].fav).length, 14);
 });
 
 // Cateva texte vazute des, ca dovada ca romana este cea cu diacritice.
 assert.strictEqual(T.ro.addGood, 'Faptă bună');
 assert.strictEqual(T.ro.addBad, 'Mai puțin bună');
 assert.strictEqual(T.ro.fav.smoke, 'Țigară');
+assert.strictEqual(T.ro.fav.delay, 'Am amânat ceva');
 assert.strictEqual(T.ro.days[6], 'sâmbătă');
 
 console.log('texte: ' + all.ro.length + ' in romana, ' + all.en.length + ' in engleza, toate verificarile au trecut');

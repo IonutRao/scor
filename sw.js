@@ -1,5 +1,5 @@
 /* Scorul zilei: face aplicatia sa porneasca si fara internet. */
-const CACHE = 'scor-0.6.2';
+const CACHE = 'scor-0.6.3';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './favicon.svg', './icon-192.png', './icon-512.png'];
 /* Fonturile si biblioteca de cont vin din afara si se pastreaza dupa prima incarcare. */
 const KEEP = ['fonts.googleapis.com', 'fonts.gstatic.com', 'cdn.jsdelivr.net'];

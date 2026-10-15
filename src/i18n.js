@@ -90,7 +90,7 @@ var T = {
     months: ['ianuarie', 'februarie', 'martie', 'aprilie', 'mai', 'iunie', 'iulie', 'august', 'septembrie', 'octombrie', 'noiembrie', 'decembrie'],
     fav: {
       gym: 'Sală', read: 'Citit', walk: 'Mers pe jos', meditate: 'Meditație', water: 'Apă 2 litri', sleep: 'Somn la timp',
-      smoke: 'Țigară', junk: 'Fast food', alcohol: 'Alcool', phone: 'Prea mult pe telefon', late: 'Culcat târziu', sweets: 'Dulciuri'
+      smoke: 'Țigară', junk: 'Fast food', alcohol: 'Alcool', phone: 'Prea mult pe telefon', late: 'Culcat târziu', sweets: 'Dulciuri', delay: 'Am amânat ceva', anger: 'M-am enervat'
     }
   },
   en: {
@@ -182,7 +182,7 @@ var T = {
     months: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
     fav: {
       gym: 'Gym', read: 'Reading', walk: 'Walk', meditate: 'Meditation', water: '2 l of water', sleep: 'Sleep on time',
-      smoke: 'Cigarette', junk: 'Fast food', alcohol: 'Alcohol', phone: 'Too much phone', late: 'Late to bed', sweets: 'Sweets'
+      smoke: 'Cigarette', junk: 'Fast food', alcohol: 'Alcohol', phone: 'Too much phone', late: 'Late to bed', sweets: 'Sweets', delay: 'Put something off', anger: 'Lost my temper'
     }
   }
 };

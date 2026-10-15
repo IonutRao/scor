@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.6.2';
+  var VERSION = '0.6.3';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -26,10 +26,11 @@
 
   /* Textele aplicatiei, pe limbi, stau in src/i18n.js (variabila T). */
 
-  /* Sugestiile cu care porneste un utilizator nou: cheie, fel, puncte. */
+  /* Sugestiile cu care porneste un utilizator nou: cheie, fel, puncte. Fara obiceiuri care presupun ceva despre om
+     (tigara, alcoolul au iesit in 0.6.3); cine le are le adauga singur. Numele lor raman in dictionar pentru listele vechi. */
   var DEFAULT_FAVS = [
     ['gym', 'plus', 10], ['read', 'plus', 10], ['walk', 'plus', 10], ['meditate', 'plus', 5], ['water', 'plus', 5], ['sleep', 'plus', 10],
-    ['smoke', 'minus', 10], ['junk', 'minus', 5], ['alcohol', 'minus', 10], ['phone', 'minus', 5], ['late', 'minus', 5], ['sweets', 'minus', 5]
+    ['junk', 'minus', 5], ['phone', 'minus', 5], ['late', 'minus', 5], ['sweets', 'minus', 5], ['delay', 'minus', 5], ['anger', 'minus', 5]
   ];
 
   var ICON = {
@@ -280,13 +281,13 @@
   function seedDemo(d) {
     var now = new Date(), today = L.dayKey(now), start = L.parseDay(today).getTime();
     var plan = [
-      [['gym', 'plus', 10], ['read', 'plus', 10], ['walk', 'plus', 10], ['smoke', 'minus', 10], ['meditate', 'plus', 5]],
+      [['gym', 'plus', 10], ['read', 'plus', 10], ['walk', 'plus', 10], ['anger', 'minus', 5], ['meditate', 'plus', 5]],
       [['gym', 'plus', 10], ['read', 'plus', 10], ['meditate', 'plus', 5]],
       [['gym', 'plus', 10], ['walk', 'plus', 10], ['sleep', 'plus', 10], ['water', 'plus', 5], ['sweets', 'minus', 5]],
       [['read', 'plus', 10], ['walk', 'plus', 10], ['late', 'minus', 5]],
       [['gym', 'plus', 10], ['read', 'plus', 10], ['sleep', 'plus', 10]],
       [['walk', 'plus', 10], ['meditate', 'plus', 5], ['water', 'plus', 5]],
-      [['water', 'plus', 5], ['smoke', 'minus', 10]]
+      [['water', 'plus', 5], ['delay', 'minus', 5]]
     ];
     plan.forEach(function (list, daysAgo) {
       var day = L.addDays(today, -daysAgo), base = L.parseDay(day).getTime();

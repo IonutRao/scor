@@ -298,7 +298,7 @@ with sync_playwright() as p:
     page.click('#nav a[data-route="profil"]')
     check(text(page, "h1") == "Profil", "profile opens")
     check(text(page, '[data-lang="ro"]') == "Română", "language button says Română")
-    check("Țigară" in text(page, "#view") and "Meditație" in text(page, "#view"), "default favorites listed with diacritics")
+    check("Am amânat ceva" in text(page, "#view") and "Meditație" in text(page, "#view") and "Țigară" not in text(page, "#view"), "default favorites listed with diacritics, without cigarette")
     shot(page, "07-profil.png", full=True)
     no_overflow(page, "profile 390")
     page.click('[data-lang="en"]')
@@ -352,7 +352,7 @@ with sync_playwright() as p:
 
     # --- zi pe minus ---
     page.click("a.btn-minus")
-    page.click('.chip:has-text("Cigarette")')
+    page.fill("#act-name", "Cigarette")
     page.click("#save-btn")
     check(text(page, "#score") == MINUS + "10", "negative day shows minus 10")
     check("neg" in page.locator("#score").get_attribute("class"), "negative score uses the minus colour")
@@ -374,8 +374,8 @@ with sync_playwright() as p:
     page.wait_for_selector("#score")
     check(text(page, "h1") == "Azi", "preview opens in Romanian even on an English browser")
     check(page.locator(".demo").count() == 1, "example banner shown in the preview")
-    check(text(page, "#score") == "+25", "example day is +25, got " + text(page, "#score"))
-    check(text(page, "#week") == "+140", "example week is +140")
+    check(text(page, "#score") == "+30", "example day is +30, got " + text(page, "#score"))
+    check(text(page, "#week") == "+150", "example week is +150, got " + text(page, "#week"))
     check(text(page, "#streak") == "6 zile", "example streak 6 days")
     check(page.locator("#today-list .row").count() == 5, "five example activities today")
     print("       example times today:", [t.strip() for t in page.locator("#today-list .row-s").all_inner_texts()])

@@ -203,7 +203,9 @@ try:
 
         a.click("a.btn-minus")
         check(a.locator('[data-act="pub"][data-v="0"]').get_attribute("aria-pressed") == "true", "o activitate pe minus porneste privata chiar dupa una publica")
-        a.click('.chip:has-text("Țigară")')
+        check(a.locator('.chip:has-text("Țigară")').count() == 0 and a.locator('.chip:has-text("Alcool")').count() == 0, "tigara si alcoolul nu sunt printre sugestiile unui cont nou")
+        check(a.locator('.chip:has-text("Am amânat ceva")').count() == 1, "in locul lor, sugestii valabile pentru oricine")
+        a.fill("#act-name", "Țigară")
         a.click("#save-btn")
         soft(lambda: wait_text(a, "#score", "0"), "Tigara minus 10 notata")
         check("privat" in text(a, "#today-list .row-s"), "randul arata ca activitatea e privata")
@@ -308,7 +310,7 @@ try:
         a.unroute("**/rest/v1/rpc/sync")
         a.click('[data-act="sync-now"]')
         soft(lambda: wait_text(a, "#sync-status", "Totul e salvat în cont", 10000), "cand revine internetul, modificarile pleaca")
-        check(db("select string_agg(coalesce(e.key, e.name), ',' order by e.ts) from public.entries e join public.profiles p on p.id = e.user_id where p.name = 'Ana'") == "gym,smoke,walk", "in baza: Sala, Tigara, Mers pe jos")
+        check(db("select string_agg(coalesce(e.key, e.name), ',' order by e.ts) from public.entries e join public.profiles p on p.id = e.user_id where p.name = 'Ana'") == "gym,Țigară,walk", "in baza: Sala, Tigara, Mers pe jos")
 
         # ------------------------------------------------------------ al doilea dispozitiv al Anei
         ctx_c, c = new_page()
