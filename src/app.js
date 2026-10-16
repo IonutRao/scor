@@ -5,11 +5,11 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.7';
+  var VERSION = '0.7.1';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
-  var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume', 'copil'] : ['plus', 'minus', 'detalii', 'copil']);
+  var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume', 'copil', 'raport'] : ['plus', 'minus', 'detalii', 'copil', 'raport']);
   /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, telul comun, respectiv copiii. */
   var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6;
   /* Cel mult atatia copii in modul educator. */
@@ -81,6 +81,8 @@
   var nameForm = { value: '', busy: false, error: '' };
   /* Ecranul pe care se adauga un copil (modul educator) si ecranul de pe care s-a ajuns acolo. */
   var kidForm = { value: '', error: '', back: 'profil' };
+  /* Raportul lunar al educatorului: luna aratata ('2026-10'). */
+  var report = { month: '' };
   /* feedSeq numara cererile de flux: un raspuns se foloseste doar daca nicio alta cerere nu a pornit dupa a lui.
      shownFeed tine minte ce flux este desenat acum, ca improspatarea sa nu redeseneze degeaba. */
   var feedSeq = 0, shownFeed = '';
@@ -196,7 +198,7 @@
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
       lastSync: 0, pubDefault: false, sv: 0, pulse: null, feedSeen: 0,
       /* Modul educator: pornit sau nu, lista copiilor (id, nume) si, doar pe acest dispozitiv, cine este ales acum (who). */
-      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null
+      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null, whoSort: 'added'
     };
   }
 
@@ -234,6 +236,7 @@
     d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
     d.feedSeen = Number(d.feedSeen) || 0;
+    d.whoSort = d.whoSort === 'score' ? 'score' : 'added';
     /* Ultimul raspuns al cardului "Azi pe plus", ca sa fie aratat pe loc la deschiderea fluxului. */
     var pz = d.pulse, names = function (list) { return Array.isArray(list) ? list.filter(function (n) { return typeof n === 'string'; }).slice(0, 100) : null; };
     d.pulse = pz && typeof pz === 'object' && typeof pz.day === 'string' && Array.isArray(pz.up)
@@ -1892,11 +1895,102 @@
                 '<button type="button" class="icon-btn" data-act="kid-remove" data-id="' + esc(k.id) + '" data-focus="kr-' + esc(k.id) + '" aria-label="' + esc(tr('kidRemove', { x: k.name })) + '">' + ICON.x + '</button></li>';
             }).join('') + '</ul>'
           : '<p class="note" id="kid-none">' + esc(tr('eduNoKids')) + '</p>') +
-        (data.edu.list.length < KIDS_MAX ? '<a class="link" href="#copil" data-route="copil" data-focus="kid-add">' + esc(tr('kidAdd')) + '</a>' : '<p class="note">' + esc(tr('kidsMax')) + '</p>')
+        (data.edu.list.length < KIDS_MAX ? '<a class="link" href="#copil" data-route="copil" data-focus="kid-add">' + esc(tr('kidAdd')) + '</a>' : '<p class="note">' + esc(tr('kidsMax')) + '</p>') +
+        (data.edu.list.length ? '<p class="rep-link"><a class="link" href="#raport" data-route="raport" data-focus="report">' + esc(tr('reportLink')) + '</a></p>' : '')
       : '';
     return '<section class="sect" id="edu"><h2>' + esc(tr('eduTitle')) + '</h2>' +
       '<label class="check"><input type="checkbox" id="edu-on"' + (data.edu.on ? ' checked' : '') + '><span>' + esc(tr('eduOn')) + '</span></label>' +
       '<p class="note">' + esc(tr('eduSub')) + '</p>' + kids + '</section>';
+  }
+
+  /* ---------- raportul lunar al educatorului ---------- */
+
+  /* Cerut de educatori (0.7.1): pentru fiecare copil, rezumatul lunii si activitatile ei, cu totul calculat din datele de pe
+     dispozitiv. Copiii sunt asezati dupa totalul lunii, cel mai mare primul. Se salveaza ca PDF prin tiparirea paginii
+     (fiecare copil pe pagina lui) sau se descarca un CSV pentru Excel. */
+  function monthLabel(ym) { return tr('months')[+ym.slice(5, 7) - 1] + ' ' + ym.slice(0, 4); }
+  function shortDate(day) { var d = L.parseDay(day); return tr('days')[d.getDay()] + ', ' + d.getDate() + ' ' + tr('months')[d.getMonth()]; }
+
+  function reportKids(ym) {
+    var kids = data.edu.list.map(function (k, i) {
+      return { k: k, i: i, st: L.monthStats(data.entries.filter(function (e) { return e.kid === k.id; }), ym) };
+    });
+    kids.sort(function (a, b) { return b.st.total - a.st.total || a.i - b.i; });
+    return kids;
+  }
+
+  function viewReport() {
+    var ym = report.month, now = L.monthOf(L.dayKey(new Date())), kids = reportKids(ym), any = false;
+    kids.forEach(function (x) { if (x.st.count) any = true; });
+    var cards = kids.map(function (x) {
+      var st = x.st;
+      var sum = st.count
+        ? '<p class="rep-line">' + esc(tr('weekOf', { n: st.up, m: st.days })) + '</p>' +
+          (st.best ? '<p class="rep-line">' + esc(tr('weekBest', { d: shortDate(st.best), v: L.fmt(st.bestVal) })) + '</p>' : '') +
+          (st.streak > 1 ? '<p class="rep-line">' + esc(tr('reportStreak', { x: count(st.streak, tr('day')) })) + '</p>' : '') +
+          '<p class="rep-line">' + esc(count(st.count, tr('activity'))) + '</p>'
+        : '<p class="rep-line">' + esc(tr('reportEmpty')) + '</p>';
+      var rows = st.list.map(function (e) {
+        var pts = L.signed(e);
+        return '<li class="row"><span class="row-main"><span class="row-s">' + esc(shortDate(e.day)) + ' · ' + esc(timeOf(e.ts)) + '</span>' +
+          '<span class="row-t">' + esc(nameOf(e)) + '</span>' + (e.note ? '<span class="rep-note">' + esc(e.note) + '</span>' : '') + '</span>' +
+          '<span class="pill ' + kind(pts) + '">' + L.fmt(pts) + '</span></li>';
+      }).join('');
+      return '<section class="rep-kid"><div class="rep-top"><h2>' + esc(x.k.name) + '</h2><span class="pill big ' + kind(st.total) + '">' + L.fmt(st.total) + '</span></div>' +
+        sum + (rows ? '<ul class="rows rep-list">' + rows + '</ul>' : '') + '</section>';
+    }).join('');
+    return '' +
+      head(esc(tr('reportTitle')), '', '<a class="icon-btn" href="#profil" data-route="profil" data-replace="1" aria-label="' + esc(tr('close')) + '">' + ICON.close + '</a>') +
+      '<div class="pad">' +
+        '<p class="rep-print">' + esc(tr('reportTitle')) + ' · ' + esc(data.name || '') + '</p>' +
+        '<div class="month-nav">' +
+          '<button type="button" class="round" data-act="rep-prev" data-focus="rep-prev" aria-label="' + esc(tr('reportPrev')) + '">‹</button>' +
+          '<span class="month-name" id="rep-month">' + esc(monthLabel(ym)) + '</span>' +
+          '<button type="button" class="round" data-act="rep-next" data-focus="rep-next" aria-label="' + esc(tr('reportNext')) + '"' + (ym >= now ? ' disabled' : '') + '>›</button>' +
+        '</div>' +
+        '<div class="rep-actions">' +
+          '<button type="button" class="btn-line calm" data-act="rep-print" data-focus="rep-print">' + esc(tr('reportPdf')) + '</button>' +
+          '<button type="button" class="btn-line calm" data-act="rep-csv" data-focus="rep-csv"' + (any ? '' : ' disabled') + '>' + esc(tr('reportCsv')) + '</button>' +
+        '</div>' +
+        (kids.length ? cards : '<p class="note">' + esc(tr('eduNoKids')) + '</p>') +
+      '</div>';
+  }
+
+  function csvCell(v) {
+    var s = String(v == null ? '' : v);
+    return /[";\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  function reportCsv(ym) {
+    var lines = [tr('csvHead').map(csvCell).join(';')];
+    reportKids(ym).forEach(function (x) {
+      x.st.list.forEach(function (e) {
+        var d = L.parseDay(e.day);
+        lines.push([x.k.name, L.pad(d.getDate()) + '.' + L.pad(d.getMonth() + 1) + '.' + d.getFullYear(), timeOf(e.ts),
+          tr(e.type === 'minus' ? 'addBad' : 'addGood'), nameOf(e), L.signed(e), e.note || ''].map(csvCell).join(';'));
+      });
+    });
+    return '\ufeff' + lines.join('\r\n') + '\r\n';
+  }
+
+  function downloadCsv(ym) {
+    try {
+      var blob = new Blob([reportCsv(ym)], { type: 'text/csv;charset=utf-8' });
+      var url = URL.createObjectURL(blob), link = document.createElement('a');
+      link.href = url;
+      link.download = 'raport-' + ym + '.csv';
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(function () { document.body.removeChild(link); URL.revokeObjectURL(url); }, 1000);
+    } catch (e) { toast(tr('reportCsvFail')); }
+  }
+
+  function shiftMonth(n) {
+    var now = L.monthOf(L.dayKey(new Date())), ym = L.addMonths(report.month, n);
+    if (ym > now) ym = now;
+    report.month = ym;
+    render();
+    focusTitle();
   }
 
   /* Ecranul pe care se adauga un copil. */
@@ -1938,26 +2032,48 @@
     queueSync();
   }
 
-  /* Alegerea celui pentru care se noteaza, din butonul de sus: Eu, copiii, Adauga copil. */
-  /* Lista "Pentru cine?" este si privirea de ansamblu: langa fiecare nume, scorul de azi si seria pe plus.
-     Ordinea este cea in care au fost adaugati copiii, niciodata dupa scor: fiecare se compara cu el insusi, nu cu ceilalti. */
-  function whoRow(id, label, on) {
+  /* Alegerea celui pentru care se noteaza, din butonul de sus: Eu, copiii, Adauga copil.
+     Lista "Pentru cine?" este si privirea de ansamblu: langa fiecare nume, scorul de azi si seria pe plus.
+     Ordinea de baza este cea in care au fost adaugati copiii; educatorii au cerut (0.7.1) si asezarea dupa scorul de azi,
+     cel mai mare primul, la o apasare pe "dupa scor", tinuta minte pe dispozitiv (data.whoSort). Eu ramane mereu primul. */
+  function whoStats(id) {
     var today = L.dayKey(new Date());
     var t = L.totals(data.entries.filter(function (e) { return (e.kid || null) === (id || null); }));
-    var total = t[today] || 0, streak = L.currentStreak(t, today);
+    return { total: t[today] || 0, streak: L.currentStreak(t, today) };
+  }
+
+  function whoRow(id, label, on, st) {
     return '<button type="button" class="row" data-act="who-pick" data-id="' + esc(id) + '" aria-pressed="' + on + '">' +
       '<span class="row-main"><span class="row-t">' + esc(label) + (on ? ' <span class="who-on" aria-hidden="true">✓</span>' : '') + '</span>' +
-        (streak > 0 ? '<span class="row-s who-streak">' + ICON.flameFlat + esc(count(streak, tr('day'))) + '</span>' : '') + '</span>' +
-      '<span class="pill ' + kind(total) + '">' + L.fmt(total) + '</span></button>';
+        (st.streak > 0 ? '<span class="row-s who-streak">' + ICON.flameFlat + esc(count(st.streak, tr('day'))) + '</span>' : '') + '</span>' +
+      '<span class="pill ' + kind(st.total) + '">' + L.fmt(st.total) + '</span></button>';
+  }
+
+  function whoList() {
+    var who = whoNow(), byScore = data.whoSort === 'score';
+    var kids = data.edu.list.map(function (k, i) { return { k: k, i: i, st: whoStats(k.id) }; });
+    if (byScore) kids.sort(function (a, b) { return b.st.total - a.st.total || a.i - b.i; });
+    var rows = [whoRow('', tr('me'), !who, whoStats(null))];
+    kids.forEach(function (x) { rows.push(whoRow(x.k.id, x.k.name, who === x.k.id, x.st)); });
+    return (kids.length > 1
+      ? '<div class="who-sort"><button type="button" class="chip-btn" data-act="who-sort" aria-pressed="' + byScore + '">' + esc(tr('whoByScore')) + '</button></div>'
+      : '') + rows.join('') +
+      (data.edu.list.length < KIDS_MAX ? '<button type="button" class="link dlg-link" data-act="kid-new">' + esc(tr('kidAdd')) + '</button>' : '');
   }
 
   function openWho() {
-    var who = whoNow(), rows = [whoRow('', tr('me'), !who)];
-    data.edu.list.forEach(function (k) { rows.push(whoRow(k.id, k.name, who === k.id)); });
-    openDialog({
-      title: tr('whoFor'), cancel: tr('close'),
-      list: rows.join('') + (data.edu.list.length < KIDS_MAX ? '<button type="button" class="link dlg-link" data-act="kid-new">' + esc(tr('kidAdd')) + '</button>' : '')
-    });
+    openDialog({ title: tr('whoFor'), cancel: tr('close'), list: whoList() });
+  }
+
+  function toggleWhoSort() {
+    data.whoSort = data.whoSort === 'score' ? 'added' : 'score';
+    persist();
+    var list = byId('dlg-l');
+    if (list && dlg.open) {
+      list.innerHTML = whoList();
+      var b = list.querySelector('[data-act="who-sort"]');
+      if (b) b.focus({ preventScroll: true });
+    }
   }
 
   function pickWho(id) {
@@ -2101,7 +2217,7 @@
     }
     var gate = BACKEND && auth !== 'in';
     var adding = isAddRoute(route);
-    var full = gate || adding || route === 'nume' || route === 'detalii' || route === 'copil';
+    var full = gate || adding || route === 'nume' || route === 'detalii' || route === 'copil' || route === 'raport';
     var html;
     if (gate) html = auth === 'out' ? viewAuth() : auth === 'name' ? viewName(true) : viewLoading();
     else if (adding) html = viewAdd();
@@ -2110,6 +2226,7 @@
     else if (route === 'profil') html = viewProfile();
     else if (route === 'nume') html = viewName(false);
     else if (route === 'copil') html = viewKid();
+    else if (route === 'raport') html = viewReport();
     else if (route === 'detalii') html = viewNote();
     else html = viewToday();
     appEl.classList.toggle('is-add', full);
@@ -2186,13 +2303,14 @@
     if (isAddRoute(r)) resetAdd(r);
     if (r === 'nume') nameForm = { value: data.name, busy: false, error: '' };
     if (r === 'copil') kidForm = { value: '', error: '', back: MAIN.indexOf(route) >= 0 ? route : 'azi' };
+    if (r === 'raport') report.month = L.monthOf(L.dayKey(new Date()));
     route = r;
     hideToast();
     if (r === 'flux' && auth === 'in') { openFeed(); if (feed.ready) markFeedSeen(); }
   }
 
   function navigate(r, replace) {
-    if (ROUTES.indexOf(r) < 0 || (r === 'detalii' && !findEntry(noteForm.id)) || (r === 'copil' && !eduAvail())) r = 'azi';
+    if (ROUTES.indexOf(r) < 0 || (r === 'detalii' && !findEntry(noteForm.id)) || ((r === 'copil' || r === 'raport') && !eduAvail())) r = 'azi';
     if (r === route && MAIN.indexOf(r) >= 0) {
       window.scrollTo(0, 0);
       if (r === 'flux' && auth === 'in') loadFeed(true);
@@ -2485,6 +2603,16 @@
     } else if (act === 'who-pick') {
       closeDialog();
       pickWho(id);
+    } else if (act === 'who-sort') {
+      toggleWhoSort();
+    } else if (act === 'rep-prev') {
+      shiftMonth(-1);
+    } else if (act === 'rep-next') {
+      shiftMonth(1);
+    } else if (act === 'rep-print') {
+      try { window.print(); } catch (e) { /* fara tiparire */ }
+    } else if (act === 'rep-csv') {
+      downloadCsv(report.month);
     } else if (act === 'kid-new') {
       closeDialog();
       navigate('copil');

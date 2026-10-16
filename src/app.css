@@ -229,6 +229,9 @@ button.row:active { opacity: .6; }
 .dlg-list .row[aria-pressed="true"] .row-t { font-weight: 700; }
 .dlg-list .pill { min-width: 44px; text-align: center; }
 .who-on { color: var(--plus-text); font-weight: 800; }
+.who-sort { display: flex; justify-content: flex-end; margin: -4px 0 2px; }
+.chip-btn { padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--card); color: var(--muted); font-size: 13px; font-weight: 600; }
+.chip-btn[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
 .who-streak { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; }
 .who-streak svg { fill: var(--gold); }
 .dlg-list .dlg-link { margin: 6px 0 -6px -6px; }
@@ -256,3 +259,29 @@ html.cam-open, html.cam-open body { overflow: hidden; }
 .dlg-ok { background: var(--minus); }
 
 @media (prefers-reduced-motion: reduce) { .btn:active, .save:active, .chip:active { transform: none; } }
+
+/* Raportul lunar al educatorului. */
+.rep-link { margin-top: 10px; }
+.rep-print { display: none; }
+.month-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.month-name { font-size: 18px; font-weight: 800; text-transform: capitalize; }
+.rep-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.rep-actions .btn-line { flex: 1 1 10rem; margin-top: 10px; }
+.rep-kid { margin-top: 26px; }
+.rep-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rep-top h2 { font-size: 22px; font-weight: 800; overflow-wrap: anywhere; }
+.pill.big { font-size: 18px; padding: 7px 14px; }
+.rep-line { margin-top: 4px; font-size: 14px; color: var(--muted); }
+.rep-list { margin-top: 10px; }
+.rep-note { margin-top: 2px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+@media print {
+  #nav, .head, .month-nav .round, .rep-actions, #toast, #cam { display: none !important; }
+  body, .app { background: #fff; }
+  .app { max-width: 44rem; padding-block: 0; }
+  .rep-print { display: block; font-size: 12px; color: #555; }
+  .month-name { display: block; font-size: 20px; }
+  .rep-kid + .rep-kid { break-before: page; page-break-before: always; }
+  .rep-kid { break-inside: avoid-page; }
+  .rep-list > li { break-inside: avoid; }
+  .pill { border: 1px solid #ccc; }
+}

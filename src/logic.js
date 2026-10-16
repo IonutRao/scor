@@ -51,6 +51,33 @@ var L = (function () {
 
   function fmt(n) { return n > 0 ? '+' + n : n < 0 ? '−' + Math.abs(n) : '0'; }
 
+  /* Luna unei zile ('2026-10-15' -> '2026-10') si luna de dinainte sau de dupa. */
+  function monthOf(day) { return day.slice(0, 7); }
+  function addMonths(ym, n) {
+    var y = +ym.slice(0, 4), m = +ym.slice(5, 7) - 1 + n;
+    y += Math.floor(m / 12);
+    m = ((m % 12) + 12) % 12;
+    return y + '-' + pad(m + 1);
+  }
+
+  /* Rezumatul unei luni pentru un set de activitati (ale unui copil, de pilda): total, zile notate, zile pe plus,
+     cea mai buna zi, cea mai lunga serie din luna, numarul de activitati si activitatile lunii in ordinea notarii. */
+  function monthStats(entries, ym) {
+    var list = entries.filter(function (e) { return monthOf(e.day) === ym; }).sort(function (a, b) { return a.ts - b.ts; });
+    var t = totals(list), days = Object.keys(t).sort(), total = 0, up = 0, best = null, run = 0, streak = 0, prev = null;
+    days.forEach(function (k) {
+      total += t[k];
+      if (t[k] > 0) {
+        up++;
+        if (!best || t[k] > t[best]) best = k;
+        run = prev && addDays(prev, 1) === k ? run + 1 : 1;
+        if (run > streak) streak = run;
+        prev = k;
+      } else { run = 0; prev = null; }
+    });
+    return { total: total, days: days.length, up: up, best: best, bestVal: best ? t[best] : 0, streak: streak, count: list.length, list: list };
+  }
+
   /* Punctele unei activitati raman intre 1 si 20. */
   function clampPts(n) {
     n = Math.round(Number(n));
@@ -74,7 +101,7 @@ var L = (function () {
   return {
     pad: pad, dayKey: dayKey, parseDay: parseDay, addDays: addDays, signed: signed, totals: totals,
     currentStreak: currentStreak, bestStreak: bestStreak, lastDays: lastDays, fmt: fmt, clampPts: clampPts,
-    NOTE_MAX: NOTE_MAX, cleanNote: cleanNote
+    NOTE_MAX: NOTE_MAX, cleanNote: cleanNote, monthOf: monthOf, addMonths: addMonths, monthStats: monthStats
   };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = L;

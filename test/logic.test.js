@@ -76,4 +76,27 @@ assert.strictEqual(L.cleanNote('a\uDE00b'), 'ab');
 assert.strictEqual(L.cleanNote('Țigară și cafea, în oraș'), 'Țigară și cafea, în oraș', 'diacriticele raman');
 assert.strictEqual(L.cleanNote(L.cleanNote('  x \n\n\n y  ')), 'x \n\n y', 'curatarea de doua ori da acelasi rezultat');
 
+// Rezumatul lunii, pentru raportul educatorului.
+assert.strictEqual(L.monthOf('2026-10-15'), '2026-10');
+assert.strictEqual(L.addMonths('2026-10', 1), '2026-11');
+assert.strictEqual(L.addMonths('2026-12', 1), '2027-01');
+assert.strictEqual(L.addMonths('2026-01', -1), '2025-12');
+assert.strictEqual(L.addMonths('2026-01', -13), '2024-12');
+const ms = L.monthStats([
+  { day: '2026-10-01', ts: 1, type: 'plus', pts: 10 },
+  { day: '2026-10-02', ts: 2, type: 'minus', pts: 5 },
+  { day: '2026-10-03', ts: 3, type: 'plus', pts: 5 },
+  { day: '2026-10-04', ts: 5, type: 'plus', pts: 20 },
+  { day: '2026-10-04', ts: 4, type: 'minus', pts: 5 },
+  { day: '2026-10-05', ts: 6, type: 'plus', pts: 5 },
+  { day: '2026-09-30', ts: 0, type: 'plus', pts: 20 },
+  { day: '2026-11-01', ts: 9, type: 'plus', pts: 20 }
+], '2026-10');
+assert.deepStrictEqual([ms.total, ms.days, ms.up, ms.best, ms.bestVal, ms.streak, ms.count], [30, 5, 4, '2026-10-04', 15, 3, 6], 'luna: total, zile, pe plus, cea mai buna, seria, activitati');
+assert.deepStrictEqual(ms.list.map((e) => e.ts), [1, 2, 3, 4, 5, 6], 'activitatile lunii in ordinea notarii, fara cele din alte luni');
+const empty = L.monthStats([{ day: '2026-09-30', ts: 0, type: 'plus', pts: 20 }], '2026-10');
+assert.deepStrictEqual([empty.total, empty.days, empty.up, empty.best, empty.streak, empty.count], [0, 0, 0, null, 0, 0], 'luna fara activitati');
+const down = L.monthStats([{ day: '2026-10-01', ts: 1, type: 'minus', pts: 5 }], '2026-10');
+assert.deepStrictEqual([down.total, down.days, down.up, down.best, down.streak], [-5, 1, 0, null, 0], 'o luna doar pe minus nu are cea mai buna zi');
+
 console.log('logic: toate verificarile au trecut');

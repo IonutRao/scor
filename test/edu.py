@@ -3,6 +3,8 @@
 
    Porneste singur baza (test/db/start.sh) si serverul de test (test/server.py). Rulare: python3 test/edu.py
 """
+import datetime
+
 from playwright.sync_api import sync_playwright
 
 from kit import check, db, finish, no_overflow, saved, setting, shot, sign_in, sign_up, soft, start, stop, text, until, wait_count, wait_text
@@ -142,6 +144,76 @@ try:
         a2.click("#dlg-cancel")
         shot(a2, "e04-azi-copil-dispozitiv2.png")
         ctx_a2.close()
+
+        # ------------------------------------------------------------ asezarea dupa scor
+        # Andrei primeste inca o fapta buna si trece inaintea Mariei doar cand lista este asezata dupa scor.
+        go(a, "azi")
+        pick_who(a, "Andrei")
+        log(a, "plus", "A ajutat la masă")
+        check(text(a, "#score") == "+15", "Andrei: +15")
+        a.click('[data-act="who-open"]')
+        a.wait_for_selector("#dlg[open]")
+        names = lambda: [r.split("\n")[0].replace(" ✓", "").strip() for r in a.locator('#dlg-l [data-act="who-pick"]').all_inner_texts()]
+        check(names() == ["Eu", "Maria", "Andrei"], "ordinea de baza: Eu, apoi copiii cum au fost adaugati: " + repr(names()))
+        check(a.get_attribute('#dlg-l [data-act="who-sort"]', "aria-pressed") == "false", "butonul dupa scor este oprit")
+        a.click('#dlg-l [data-act="who-sort"]')
+        check(names() == ["Eu", "Andrei", "Maria"], "dupa scor: Eu ramane primul, Andrei (+15) inaintea Mariei (+5): " + repr(names()))
+        check(a.get_attribute('#dlg-l [data-act="who-sort"]', "aria-pressed") == "true", "butonul arata ca e pornit")
+        shot(a, "e06-dupa-scor.png")
+        a.click("#dlg-cancel")
+        a.wait_for_selector("#dlg:not([open])", state="attached")
+        a.reload()
+        a.wait_for_selector("#score")
+        a.click('[data-act="who-open"]')
+        a.wait_for_selector("#dlg[open]")
+        check(names() == ["Eu", "Andrei", "Maria"], "alegerea se tine minte si dupa reincarcare")
+        a.click('#dlg-l [data-act="who-sort"]')
+        check(names() == ["Eu", "Maria", "Andrei"], "si se poate intoarce la ordinea de adaugare")
+        a.click("#dlg-cancel")
+        a.wait_for_selector("#dlg:not([open])", state="attached")
+        pick_who(a, "Eu")
+
+        # ------------------------------------------------------------ raportul lunar
+        # Andrei: +10 si +5 azi (15); Maria: +10 si -5 azi (5). Copiii sunt asezati dupa totalul lunii.
+        go(a, "profil")
+        a.click('[data-focus="report"]')
+        soft(lambda: a.wait_for_selector(".rep-kid", timeout=8000), "din Profil se deschide raportul lunar")
+        check(text(a, "h1") == "Raport lunar", "titlul ecranului")
+        today = datetime.date.today()
+        luni = ["ianuarie", "februarie", "martie", "aprilie", "mai", "iunie", "iulie", "august", "septembrie", "octombrie", "noiembrie", "decembrie"]
+        check(text(a, "#rep-month").lower() == "%s %d" % (luni[today.month - 1], today.year), "porneste pe luna de acum: " + text(a, "#rep-month"))
+        check(a.locator('[data-act="rep-next"]').is_disabled(), "nu se poate merge in viitor")
+        heads = a.locator(".rep-kid h2").all_inner_texts()
+        check(heads == ["Andrei", "Maria"], "copiii dupa totalul lunii, cel mai mare primul: " + repr(heads))
+        andrei = text(a, ".rep-kid:nth-of-type(1)")
+        check("+15" in andrei and "1 din 1 zile pe plus" in andrei and "2 activități" in andrei, "Andrei: total +15, ziua pe plus, doua activitati")
+        check("A ajutat la masă" in andrei and "Teme făcute" in andrei, "cu lista activitatilor lui")
+        maria = text(a, ".rep-kid:nth-of-type(2)")
+        check("+5" in maria and "Nu a mâncat legumele" in maria and "−5" in maria, "Maria: total +5, cu minusul ei in lista")
+        check("Alergare" not in text(a, "#view"), "activitatile adultului nu intra in raport")
+        shot(a, "e07-raport.png", full=True)
+        no_overflow(a, "raport 390")
+
+        with a.expect_download() as dl:
+            a.click('[data-act="rep-csv"]')
+        csv_path = dl.value.path()
+        csv = open(csv_path, "rb").read().decode("utf-8-sig")
+        check(dl.value.suggested_filename == "raport-%s.csv" % today.strftime("%Y-%m"), "fisierul se numeste dupa luna: " + dl.value.suggested_filename)
+        lines = csv.strip().split("\r\n")
+        check(lines[0] == "Copil;Data;Ora;Fel;Titlu;Puncte;Detalii" and len(lines) == 5, "CSV: cap de tabel si patru activitati (%d)" % (len(lines) - 1))
+        check(lines[1].startswith("Andrei;%s;" % today.strftime("%d.%m.%Y")) and ";Faptă bună;Teme făcute;5;" in lines[1], "prima linie: Andrei, data de azi, fapta buna, +5: " + lines[1])
+        check(any(l.startswith("Maria;") and ";Mai puțin bună;Nu a mâncat legumele;-5;" in l for l in lines), "Maria cu minusul ei, ca numar negativ")
+        check(open(csv_path, "rb").read()[:3] == b"\xef\xbb\xbf", "fisierul incepe cu semnul pentru Excel, ca diacriticele sa se vada")
+
+        a.click('[data-act="rep-prev"]')
+        prev = today.replace(day=1) - datetime.timedelta(days=1)
+        check(text(a, "#rep-month").lower() == "%s %d" % (luni[prev.month - 1], prev.year), "luna dinainte: " + text(a, "#rep-month"))
+        check(a.locator(".rep-kid").count() == 2 and text(a, "#view").count("Nicio activitate notată în această lună.") == 2, "luna dinainte nu are nimic notat, pentru niciun copil")
+        check(a.locator('[data-act="rep-csv"]').is_disabled() and not a.locator('[data-act="rep-next"]').is_disabled(), "fara activitati nu e nimic de descarcat; inainte se poate")
+        a.click('[data-act="rep-next"]')
+        check(a.locator(".rep-kid h2").all_inner_texts() == ["Andrei", "Maria"], "inapoi la luna de acum")
+        a.click("a.icon-btn")
+        check(text(a, "h1") == "Profil", "inchiderea intoarce in Profil")
 
         # ------------------------------------------------------------ scoaterea unui copil
         go(a, "profil")
