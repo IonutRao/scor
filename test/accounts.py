@@ -462,15 +462,23 @@ try:
         check(db("select count(*) || '/' || count(*) filter (where lang = 'en') from public.entries where is_public") == "63/2", "in baza: 63 de activitati publice, doua in engleza")
 
         ctx_f, f = new_page()
-        feed_calls = []
-        f.on("request", lambda r: feed_calls.append(time.time()) if r.url.endswith("/rest/v1/rpc/feed") else None)
+        feed_calls, peeks = [], []
+        def on_feed(r):
+            if r.url.endswith("/rest/v1/rpc/feed"):
+                feed_calls.append(time.time())
+                if '"p_limit":5' in (r.post_data or "").replace(" ", ""):
+                    peeks.append(time.time())
+        f.on("request", on_feed)
         sign_in(f, "ana@example.test", "parola-ana-1")
         soft(lambda: f.wait_for_selector("#score", timeout=8000), "Ana intra de pe un alt dispozitiv")
         f.wait_for_timeout(2500)
-        check(len(feed_calls) == 0, "cat timp e pe ecranul Azi, aplicatia nu cere fluxul")
+        check(len(feed_calls) == len(peeks) == 1, "pe ecranul Azi, aplicatia doar trage cu ochiul la flux: o cerere mica, nu fluxul intreg (%d/%d)" % (len(peeks), len(feed_calls)))
+        soft(lambda: f.wait_for_selector('#nav a[data-route="flux"] .nav-dot', timeout=3000), "pe un dispozitiv nou, butonul Flux poarta punctul: sunt activitati nevazute")
+        check("activități noi" in (f.get_attribute('#nav a[data-route="flux"]', "aria-label") or ""), "punctul are si un text pentru cititoarele de ecran")
 
         f.click('#nav a[data-route="flux"]')
         soft(lambda: wait_count(f, "#feed-list .post", 30), "fluxul se deschide cu prima pagina, 30 de activitati")
+        check(f.locator("#nav .nav-dot").count() == 0, "in Flux punctul dispare")
         check("Sală" in text(f, "#feed-list .post"), "cea mai noua este prima")
         f.evaluate("""() => {
           window.__draws = 0; window.__loading = 0;
@@ -498,6 +506,22 @@ try:
         soft(lambda: wait_text(f, "#cheers-got", "1"), "si in totalul de incurajari primite, in acelasi timp")
         f.click('#nav a[data-route="azi"]')
         check(text(f, "#cheers") == "1", "pe Azi se vede aceeasi incurajare, fara alta incarcare")
+        check(f.locator("#nav .nav-dot").count() == 0, "dupa ce a vazut fluxul, pe Azi nu e niciun punct")
+        f.click('#nav a[data-route="jurnal"]')
+        add(g, "plus", name="Lectură în parc", public=True)
+        soft(lambda: f.wait_for_selector('#nav a[data-route="flux"] .nav-dot', timeout=8000), "cand altcineva posteaza, pe butonul Flux apare punctul, fara sa fie in Flux")
+        f.click('#nav a[data-route="azi"]')
+        check(f.locator("#nav .nav-dot").count() == 1, "punctul ramane si pe alt ecran")
+        shot(f, "c18-punct-flux.png")
+        add(f, "plus", name="A mea, publică", public=True)
+        f.wait_for_timeout(1500)
+        check(f.locator("#nav .nav-dot").count() == 1, "propria activitate nu schimba nimic")
+        f.click('#nav a[data-route="flux"]')
+        soft(lambda: wait_count(f, '#feed-list .post:has-text("Lectură în parc")', 1), "in Flux apare activitatea noua")
+        check(f.locator("#nav .nav-dot").count() == 0, "si punctul s-a stins")
+        f.click('#nav a[data-route="azi"]')
+        f.wait_for_timeout(4500)
+        check(f.locator("#nav .nav-dot").count() == 0, "nu reapare cat timp nu posteaza nimeni")
         f.click('#nav a[data-route="flux"]')
         f.wait_for_selector("#feed-list .post")
 
@@ -555,9 +579,9 @@ try:
                 break
             f.click('[data-act="feed-more"]')
             f.wait_for_timeout(600)
-        soft(lambda: wait_count(f, "#feed-list .post", 61), "cu Mai multe se vad toate cele 61 de activitati in romana")
+        soft(lambda: wait_count(f, "#feed-list .post", 63), "cu Mai multe se vad toate cele 63 de activitati in romana")
         f.wait_for_timeout(2800)
-        check(f.locator("#feed-list .post").count() == 61 and f.locator('[data-act="feed-more"]').count() == 0, "improspatarea singura nu strange paginile deschise")
+        check(f.locator("#feed-list .post").count() == 63 and f.locator('[data-act="feed-more"]').count() == 0, "improspatarea singura nu strange paginile deschise")
         check("Veche 60" in f.locator("#feed-list .post").last.inner_text(), "cea mai veche activitate a ramas la coada listei")
 
         # Cu lista coborata, noutatile intra deasupra fara sa miste ce are omul in fata.
@@ -574,7 +598,7 @@ try:
           return [p.getBoundingClientRect().top, window.scrollY];
         }""", mark[0])
         check(abs(now[0] - mark[1]) <= 1.5 and now[1] > mark[2] + 40, "activitatea la care se uita ramane pe loc (%.1f, apoi %.1f; pagina a coborat cu %d)" % (mark[1], now[0], now[1] - mark[2]))
-        check(f.locator("#feed-list .post").count() == 62, "si toate paginile deschise raman, cu noutatea in plus")
+        check(f.locator("#feed-list .post").count() == 64, "si toate paginile deschise raman, cu noutatea in plus")
 
         # Cu aplicatia in fundal nu se cere nimic; la revenire fluxul se aduce la zi.
         hide = "(h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h }); document.dispatchEvent(new Event('visibilitychange')); }"
@@ -594,7 +618,7 @@ try:
         f.wait_for_timeout(6000)
         tries = len(feed_calls) - n3
         check(1 <= tries <= 3, "cand serverul nu raspunde, incercarile se raresc (%d in 6 secunde)" % tries)
-        check(f.locator("#feed-list .post").count() == 63 and f.locator("p.note.feed").count() == 0, "lista ramane pe ecran, fara mesaj de eroare")
+        check(f.locator("#feed-list .post").count() == 65 and f.locator("p.note.feed").count() == 0, "lista ramane pe ecran, fara mesaj de eroare")
         add(g, "plus", name="Plimbare", public=True)
         f.unroute("**/rest/v1/rpc/feed")
         soft(lambda: wait_text(f, "#feed-list .post", "Plimbare", 15000), "cand serverul raspunde din nou, fluxul isi revine singur")

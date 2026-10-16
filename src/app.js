@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.6.3';
+  var VERSION = '0.7';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -86,6 +86,9 @@
   var feedSeq = 0, shownFeed = '';
   /* Cardul "Azi pe plus": o cerere pe drum, numarul ei (un raspuns vechi nu mai conteaza) si cand s-a incercat ultima data. */
   var pulseBusy = false, pulseSeq = 0, pulseTried = 0;
+  /* Punctul de pe butonul Flux: cea mai noua activitate a altcuiva stiuta (feedFresh) fata de cea vazuta ultima data
+     in Flux (data.feedSeen). Cat timp alt ecran este deschis, aplicatia trage cu ochiul la flux din cand in cand (peek). */
+  var feedFresh = 0, peekBusy = false, peekAt = 0;
   var feed = newFeed();
   var openDays = {};
   var appEl, viewEl, navEl, toastEl, dlg;
@@ -191,7 +194,7 @@
     return {
       v: 2, lang: null, demo: false, uid: null, name: '', email: '', entries: [], favs: defaultFavs(),
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
-      lastSync: 0, pubDefault: false, sv: 0, pulse: null,
+      lastSync: 0, pubDefault: false, sv: 0, pulse: null, feedSeen: 0,
       /* Modul educator: pornit sau nu, lista copiilor (id, nume) si, doar pe acest dispozitiv, cine este ales acum (who). */
       edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null
     };
@@ -230,6 +233,7 @@
     d.uploads = (Array.isArray(d.uploads) ? d.uploads : []).filter(okName);
     d.sv = d.sv > 0 ? d.sv : 0;
     d.lastSync = d.lastSync || 0;
+    d.feedSeen = Number(d.feedSeen) || 0;
     /* Ultimul raspuns al cardului "Azi pe plus", ca sa fie aratat pe loc la deschiderea fluxului. */
     var pz = d.pulse, names = function (list) { return Array.isArray(list) ? list.filter(function (n) { return typeof n === 'string'; }).slice(0, 100) : null; };
     d.pulse = pz && typeof pz === 'object' && typeof pz.day === 'string' && Array.isArray(pz.up)
@@ -718,6 +722,8 @@
       session++;
       openDays = {};
       feed = newFeed();
+      feedFresh = 0;
+      peekAt = 0;
       forgetShots();
       PHOTO.clear();
     }
@@ -851,6 +857,8 @@
     auth = 'out';
     authForm = { mode: 'in', email: '', busy: false, error: '', info: '', detail: '' };
     feed = newFeed();
+    feedFresh = 0;
+    peekAt = 0;
     openDays = {};
     openNotes = {};
     noteForm = { id: null, value: '', back: 'azi', photo: '', pic: null, drop: false, picBusy: false };
@@ -969,6 +977,7 @@
       feed.error = '';
       feed.ready = true;
       noteMine(rows);
+      if (reset) noteFresh(rows);
     }, function (err) {
       if (seq !== feedSeq) return;
       feed.error = err.offline ? 'offline' : 'error';
@@ -1000,6 +1009,7 @@
       feed.fails = 0;
       feed.error = '';
       noteMine(rows);
+      noteFresh(rows);
       showFeed();
     }, function () {
       if (seq !== feedSeq) return;
@@ -1033,6 +1043,41 @@
       feed.done = rows.length < limit;
     }
     feed.items = out;
+  }
+
+  /* Cea mai noua activitate a altcuiva dintr-un raspuns de flux. */
+  function newestOther(rows) {
+    var t = 0;
+    rows.forEach(function (r) { if (!r.mine && Number(r.ts) > t) t = Number(r.ts); });
+    return t;
+  }
+
+  /* Un raspuns de flux spune ce e mai nou; cand Flux este chiar pe ecran, totul este si vazut. */
+  function noteFresh(rows) {
+    var t = newestOther(rows);
+    if (t > feedFresh) feedFresh = t;
+    if (route === 'flux') markFeedSeen();
+  }
+
+  function markFeedSeen() {
+    if (feedFresh > data.feedSeen) { data.feedSeen = feedFresh; persist(); }
+    if (navEl && !navEl.hidden && navEl.querySelector('.nav-dot')) renderNav(false);
+  }
+
+  function feedNew() { return BACKEND && auth === 'in' && feedFresh > data.feedSeen; }
+
+  /* Cu alt ecran deschis: o cerere mica, rara, doar ca sa stie daca a aparut ceva nou de la altcineva. */
+  function peekFeed() {
+    if (peekBusy) return;
+    var mine = session;
+    peekBusy = true;
+    peekAt = Date.now();
+    API.rpc('feed', { p_lang: lang, p_before: null, p_limit: 5 }).then(function (rows) {
+      if (mine !== session || auth !== 'in') return;
+      var was = feedNew();
+      if (Array.isArray(rows)) noteFresh(rows);
+      if (feedNew() !== was && navEl && !navEl.hidden) renderNav(false);
+    }, function () { /* data viitoare */ }).then(function () { peekBusy = false; });
   }
 
   /* Activitatile mele vazute in flux aduc cu ele numarul de incurajari la zi, fara un drum in plus pana la cont. */
@@ -1152,8 +1197,12 @@
 
   /* Cat timp ecranul Flux este deschis si la vedere, se improspateaza singur. Dupa incercari nereusite asteapta tot mai mult. */
   function feedTick() {
-    if (auth !== 'in' || route !== 'flux' || document.hidden || navigator.onLine === false) return;
+    if (auth !== 'in' || document.hidden || navigator.onLine === false) return;
     var now = Date.now(), wait = FEED_EVERY * Math.min(8, Math.pow(2, feed.fails));
+    if (route !== 'flux') {
+      if (now - peekAt >= PULSE_EVERY) peekFeed();
+      return;
+    }
     if (!feed.ready) {
       /* Prima incarcare: daca nu a pornit inca porneste acum, iar daca nu a reusit se mai incearca singura. */
       if (!feed.loading && (!feed.error || now - feed.tried >= wait)) loadFeed(true);
@@ -2029,7 +2078,10 @@
     navEl.setAttribute('aria-label', tr('sections'));
     var labels = { azi: 'today', jurnal: 'journal', flux: 'feed', profil: 'profile' };
     navEl.innerHTML = '<div class="nav-in">' + MAIN.map(function (r) {
-      return '<a href="#' + r + '" data-route="' + r + '"' + (route === r ? ' aria-current="page"' : '') + '><span>' + esc(tr(labels[r])) + '</span></a>';
+      var dot = r === 'flux' && route !== 'flux' && feedNew();
+      return '<a href="#' + r + '" data-route="' + r + '"' + (route === r ? ' aria-current="page"' : '') +
+        (dot ? ' aria-label="' + esc(tr(labels[r]) + ', ' + tr('feedNew')) + '"' : '') + '><span>' + esc(tr(labels[r])) +
+        (dot ? '<i class="nav-dot" aria-hidden="true"></i>' : '') + '</span></a>';
     }).join('') + '</div>';
   }
 
@@ -2136,7 +2188,7 @@
     if (r === 'copil') kidForm = { value: '', error: '', back: MAIN.indexOf(route) >= 0 ? route : 'azi' };
     route = r;
     hideToast();
-    if (r === 'flux' && auth === 'in') openFeed();
+    if (r === 'flux' && auth === 'in') { openFeed(); if (feed.ready) markFeedSeen(); }
   }
 
   function navigate(r, replace) {
@@ -2454,7 +2506,7 @@
       var mail = byId('auth-email');
       if (mail) authForm.email = mail.value;
       render();
-      if (BACKEND && auth === 'in' && before !== lang) feed = newFeed();
+      if (BACKEND && auth === 'in' && before !== lang) { feed = newFeed(); feedFresh = 0; data.feedSeen = 0; peekAt = 0; persist(); }
     } else if (act === 'unfav') {
       data.favs = data.favs.filter(function (x) { return x.id !== id; });
       touchFavs();
@@ -2598,7 +2650,7 @@
       if (BACKEND) {
         if (pendingCount() > 0 || Date.now() - data.lastSync > 60000) queueSync(200);
         if (data.uploads.length || data.outbox.gone.length) queuePump(400);
-        if (route === 'flux') { feed.fails = 0; openFeed(); }
+        if (route === 'flux') { feed.fails = 0; openFeed(); } else peekAt = 0;
       }
     });
     if (BACKEND) setInterval(feedTick, Math.min(1000, Math.max(250, Math.round(FEED_EVERY / 3))));

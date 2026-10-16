@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.7: un punct pe butonul Flux când altcineva a postat ceva ce nu ai văzut încă; dispare când deschizi Flux.
 - 0.6.3: un cont nou nu mai pornește cu „Țigară” și „Alcool” printre favorite; în locul lor, „Am amânat ceva” și „M-am enervat”. Cine le avea le păstrează.
 - 0.6.2: la o faptă mai puțin bună făcută publică, butonul din flux spune „Mâine mai bine”, nu „Încurajează”.
 - 0.6.1: în lista „Pentru cine?”, lângă fiecare nume apar scorul de azi și seria pe plus.
