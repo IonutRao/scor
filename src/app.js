@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.7.2';
+  var VERSION = '0.7.3';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -13,7 +13,7 @@
   /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, telul comun, respectiv copiii. */
   var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6;
   /* Cel mult atatia copii in modul educator. */
-  var KIDS_MAX = 12;
+  var KIDS_MAX = 30;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
   /* Fluxul: cate activitati vin o data, cate da serverul cel mult intr-un raspuns (vezi feed in supabase/schema.sql)
      si la cat timp se improspateaza singur cat e pe ecran. */

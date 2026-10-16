@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.7.3: până la 30 de copii într-un cont, cât o clasă (era 12).
 - 0.7.2: ghidul pentru educatori, ca pagină (`ghid.html`) și PDF, cu link din secțiunea Mod educator a Profilului.
 - 0.7.1: pentru educatori, lista „Pentru cine?” se poate așeza „după scor”, iar în Profil există „Raport lunar”: rezumatul lunii pentru fiecare copil, de salvat ca PDF sau de descărcat pentru Excel.
 - 0.7: un punct pe butonul Flux când altcineva a postat ceva ce nu ai văzut încă; dispare când deschizi Flux.
