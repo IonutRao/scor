@@ -611,7 +611,7 @@ var T = {
     kidNameInvalid: 'Numele are între 1 și 20 de litere, fără < sau >.', kidNameTaken: 'Mai ai un copil cu numele acesta.', kidAdded: '{x} a fost adăugat', kidsMax: 'Cel mult 12 copii.',
     kidRemove: 'Scoate pe {x}', kidRemoveTitle: 'Scoți copilul {x}?', kidRemoveBody: 'Se șterg și toate activitățile notate pentru {x}. Nu se poate anula.', kidRemoveOk: 'Scoate', kidRemoved: 'Copil scos',
     me: 'Eu', whoFor: 'Pentru cine?', whoByScore: 'după scor',
-    reportLink: 'Raport lunar', reportTitle: 'Raport lunar', reportPrev: 'Luna dinainte', reportNext: 'Luna următoare', reportPdf: 'Salvează PDF', reportCsv: 'Descarcă pentru Excel', reportCsvFail: 'Nu s-a putut descărca fișierul.', reportStreak: 'cea mai lungă serie: {x}', reportEmpty: 'Nicio activitate notată în această lună.', csvHead: ['Copil', 'Data', 'Ora', 'Fel', 'Titlu', 'Puncte', 'Detalii'], forKid: 'pentru {x}', eduKidPrivate: 'Activitățile copiilor rămân private.',
+    eduGuide: 'Ghid pentru educatori', reportLink: 'Raport lunar', reportTitle: 'Raport lunar', reportPrev: 'Luna dinainte', reportNext: 'Luna următoare', reportPdf: 'Salvează PDF', reportCsv: 'Descarcă pentru Excel', reportCsvFail: 'Nu s-a putut descărca fișierul.', reportStreak: 'cea mai lungă serie: {x}', reportEmpty: 'Nicio activitate notată în această lună.', csvHead: ['Copil', 'Data', 'Ora', 'Fel', 'Titlu', 'Puncte', 'Detalii'], forKid: 'pentru {x}', eduKidPrivate: 'Activitățile copiilor rămân private.',
     weekOf: '{n} din {m} zile pe plus', weekTodayUp: 'prima zi, și e pe plus', weekTodayNot: 'prima zi, încă nu e pe plus', weekBest: 'cea mai bună zi: {d}, {v}', weekNoPlus: 'nicio zi pe plus încă',
     refresh: 'Actualizează', moreFeed: 'Mai multe', loading: 'Se încarcă...',
     feedNew: 'activități noi', feedEmpty: 'Încă nu a apărut nimic aici.', feedEmptyHint: 'Arată în flux o faptă bună și va fi prima.',
@@ -704,7 +704,7 @@ var T = {
     kidNameInvalid: 'The name has 1 to 20 letters, without < or >.', kidNameTaken: 'You already have a child with this name.', kidAdded: '{x} was added', kidsMax: 'At most 12 children.',
     kidRemove: 'Remove {x}', kidRemoveTitle: 'Remove {x}?', kidRemoveBody: 'Every activity logged for {x} is deleted too. This cannot be undone.', kidRemoveOk: 'Remove', kidRemoved: 'Child removed',
     me: 'Me', whoFor: 'For whom?', whoByScore: 'by score',
-    reportLink: 'Monthly report', reportTitle: 'Monthly report', reportPrev: 'Previous month', reportNext: 'Next month', reportPdf: 'Save as PDF', reportCsv: 'Download for Excel', reportCsvFail: 'The file could not be downloaded.', reportStreak: 'longest streak: {x}', reportEmpty: 'No activity logged this month.', csvHead: ['Child', 'Date', 'Time', 'Kind', 'Title', 'Points', 'Details'], forKid: 'for {x}', eduKidPrivate: 'Children’s activities stay private.',
+    eduGuide: 'Guide for educators (Romanian)', reportLink: 'Monthly report', reportTitle: 'Monthly report', reportPrev: 'Previous month', reportNext: 'Next month', reportPdf: 'Save as PDF', reportCsv: 'Download for Excel', reportCsvFail: 'The file could not be downloaded.', reportStreak: 'longest streak: {x}', reportEmpty: 'No activity logged this month.', csvHead: ['Child', 'Date', 'Time', 'Kind', 'Title', 'Points', 'Details'], forKid: 'for {x}', eduKidPrivate: 'Children’s activities stay private.',
     weekOf: '{n} of {m} days on plus', weekTodayUp: 'first day, and it is on plus', weekTodayNot: 'first day, not on plus yet', weekBest: 'best day: {d}, {v}', weekNoPlus: 'no day on plus yet',
     refresh: 'Refresh', moreFeed: 'More', loading: 'Loading...',
     feedNew: 'new activities', feedEmpty: 'Nothing here yet.', feedEmptyHint: 'Show a good deed in the feed and it will be the first.',
@@ -1297,7 +1297,7 @@ var CAM = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.7.1';
+  var VERSION = '0.7.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -3192,7 +3192,7 @@ var CAM = (function () {
       : '';
     return '<section class="sect" id="edu"><h2>' + esc(tr('eduTitle')) + '</h2>' +
       '<label class="check"><input type="checkbox" id="edu-on"' + (data.edu.on ? ' checked' : '') + '><span>' + esc(tr('eduOn')) + '</span></label>' +
-      '<p class="note">' + esc(tr('eduSub')) + '</p>' + kids + '</section>';
+      '<p class="note">' + esc(tr('eduSub')) + ' <a class="link" href="ghid.html" target="_blank" rel="noopener" data-focus="guide">' + esc(tr('eduGuide')) + '</a></p>' + kids + '</section>';
   }
 
   /* ---------- raportul lunar al educatorului ---------- */

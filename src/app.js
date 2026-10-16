@@ -5,7 +5,7 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.7.1';
+  var VERSION = '0.7.2';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
@@ -1900,7 +1900,7 @@
       : '';
     return '<section class="sect" id="edu"><h2>' + esc(tr('eduTitle')) + '</h2>' +
       '<label class="check"><input type="checkbox" id="edu-on"' + (data.edu.on ? ' checked' : '') + '><span>' + esc(tr('eduOn')) + '</span></label>' +
-      '<p class="note">' + esc(tr('eduSub')) + '</p>' + kids + '</section>';
+      '<p class="note">' + esc(tr('eduSub')) + ' <a class="link" href="ghid.html" target="_blank" rel="noopener" data-focus="guide">' + esc(tr('eduGuide')) + '</a></p>' + kids + '</section>';
   }
 
   /* ---------- raportul lunar al educatorului ---------- */

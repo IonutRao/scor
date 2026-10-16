@@ -16,7 +16,7 @@ SRC = ROOT / "src"
 SITE = ROOT
 ART = ROOT / "artifact"
 TEST = ROOT / "test"
-VERSION = "0.7.1"
+VERSION = "0.7.2"
 TITLE = "Scorul zilei"
 DESCRIPTION = "Ține scorul zilei tale: faptele bune pe plus, cele mai puțin bune pe minus."
 INK = (30, 27, 75)
@@ -83,6 +83,9 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
+
+  /* Ghidul si PDF-ul lui sunt pagini obisnuite, nu fac parte din aplicatie. */
+  if (/[/]ghid[^/]*$/.test(url.pathname)) return;
 
   /* Pagina: intai de pe internet, ca actualizarile sa ajunga imediat; fara internet, din copia salvata. */
   if (req.mode === 'navigate') {
@@ -175,6 +178,8 @@ def main():
     icon(512).save(SITE / "icon-512.png")
     icon(512, 0.78).save(SITE / "icon-maskable-512.png")
     icon(180).save(SITE / "apple-touch-icon.png")
+    # Ghidul pentru educatori: o pagina de sine statatoare; PDF-ul ei se face separat, cu tools/ghid_pdf.py.
+    shutil.copyfile(SRC / "ghid.html", SITE / "ghid.html")
 
     # Aceeasi aplicatie in modul local, fara server, pentru test/flow.py. Nu se urca in repo.
     (local / "index.html").write_text(page({"pwa": True}), encoding="utf-8")
@@ -190,7 +195,7 @@ def main():
              "<style>" + RESET + "body{font:14px system-ui,sans-serif}</style></head><body>")
     (TEST / "artifact-preview.html").write_text(shell + art_html + "</body></html>", encoding="utf-8")
 
-    for n in ("index.html", "manifest.webmanifest", "sw.js"):
+    for n in ("index.html", "manifest.webmanifest", "sw.js", "ghid.html"):
         print(f"{n:28s} {(SITE / n).stat().st_size:>8d} B")
     print(f"{'artifact/scorul-zilei.html':28s} {(ART / 'scorul-zilei.html').stat().st_size:>8d} B")
     print("mod:", "cu conturi" if "backend" in site_config() else "local (src/config.json nu are inca adresa si cheia)")

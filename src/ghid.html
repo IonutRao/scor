@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scorul zilei · Ghid pentru educatori</title>
+<meta name="description" content="Cum folosește un educator aplicația Scorul zilei: copii, notare, raport lunar.">
+<meta name="theme-color" content="#F5F5FA">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+<style>
+  :root { color-scheme: light; --bg: #F5F5FA; --card: #fff; --ink: #1E1B4B; --muted: #6B6B8A; --line: #E3E3EE; --plus: #3DDC97; --plus-tint: #DDF7EC; --plus-text: #0A6E46; --minus: #FF6F59; --minus-tint: #FFE3DD; --minus-text: #B3261E; --gold: #FFC53D; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--ink); font-family: Manrope, Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 16px; line-height: 1.55; -webkit-text-size-adjust: 100%; }
+  .wrap { max-width: 42rem; margin-inline: auto; padding: 20px 16px 60px; }
+  .cover { background: var(--ink); color: #fff; border-radius: 28px; padding: 28px 24px; margin-bottom: 28px; }
+  .cover .kicker { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--plus); }
+  .cover h1 { font-size: 34px; line-height: 1.1; margin: 8px 0 10px; font-weight: 800; }
+  .cover p { margin: 0; color: #C9C7E6; font-size: 16px; }
+  .cover .meta { margin-top: 18px; font-size: 13px; color: #A9A6D1; }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin: -12px 0 28px; }
+  .toolbar a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px 18px; border-radius: 16px; border: 1.5px solid var(--ink); color: var(--ink); font-weight: 700; text-decoration: none; }
+  .toolbar a.solid { background: var(--ink); color: #fff; }
+  nav.toc { background: var(--card); border-radius: 20px; padding: 16px 20px; margin-bottom: 28px; }
+  nav.toc h2 { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  nav.toc ol { margin: 0; padding-left: 22px; }
+  nav.toc li { margin: 4px 0; }
+  nav.toc a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-top: 34px; }
+  h2 { font-size: 24px; line-height: 1.2; margin: 0 0 12px; font-weight: 800; }
+  h2 .n { display: inline-block; min-width: 34px; height: 34px; line-height: 34px; margin-right: 10px; border-radius: 50%; background: var(--plus-tint); color: var(--plus-text); font-size: 16px; text-align: center; font-weight: 800; vertical-align: 4px; }
+  h3 { font-size: 17px; margin: 18px 0 6px; font-weight: 800; }
+  p { margin: 8px 0; }
+  ol, ul { padding-left: 22px; margin: 8px 0; }
+  li { margin: 5px 0; }
+  li::marker { color: var(--muted); font-weight: 700; }
+  .ui { display: inline-block; padding: 1px 8px; border-radius: 8px; background: var(--card); border: 1px solid var(--line); font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .tip { background: var(--card); border-left: 4px solid var(--gold); border-radius: 0 16px 16px 0; padding: 10px 16px; margin: 14px 0; }
+  .tip b { color: var(--ink); }
+  .warn { background: var(--minus-tint); border-left: 4px solid var(--minus); border-radius: 0 16px 16px 0; padding: 10px 16px; margin: 14px 0; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .pill.plus { background: var(--plus-tint); color: var(--plus-text); }
+  .pill.minus { background: var(--minus-tint); color: var(--minus-text); }
+  .faq dt { font-weight: 800; margin-top: 14px; }
+  .faq dd { margin: 4px 0 0; color: #3b3860; }
+  .muted { color: var(--muted); }
+  footer { margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+  a { color: var(--ink); }
+  @media print {
+    body { background: #fff; font-size: 11.5pt; }
+    .wrap { max-width: none; padding: 0; }
+    .toolbar { display: none; }
+    .cover { border-radius: 16px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    nav.toc, .tip, .warn, .ui, .pill { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    nav.toc { border: 1px solid var(--line); }
+    nav.toc a { text-decoration: none; }
+    p, li, .tip, .warn, dt, dd { break-inside: avoid; }
+    #sfaturi, #intrebari { break-before: page; }
+    h2 { break-after: avoid; }
+    a { color: inherit; text-decoration: none; }
+    footer { break-before: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="cover">
+    <div class="kicker">Scorul zilei</div>
+    <h1>Ghid pentru educatori</h1>
+    <p>Cum ții scorul zilei pentru copiii din grupa sau clasa ta: pornire, notare, privire de ansamblu și raportul lunar.</p>
+    <div class="meta">Versiunea 0.7.2 · octombrie 2026 · <span translate="no">ionutrao.github.io/scor</span></div>
+  </header>
+
+  <div class="toolbar">
+    <a class="solid" href="ghid-educatori.pdf" download>Descarcă ghidul (PDF)</a>
+    <a href="./">Deschide aplicația</a>
+  </div>
+
+  <nav class="toc" aria-label="Cuprins">
+    <h2>Cuprins</h2>
+    <ol>
+      <li><a href="#ce-este">Ce este Scorul zilei</a></li>
+      <li><a href="#pornire">Primii pași: aplicația și contul</a></li>
+      <li><a href="#educator">Pornește modul educator și adaugă copiii</a></li>
+      <li><a href="#pentru-cine">Butonul „Pentru cine?”</a></li>
+      <li><a href="#notare">Notează o faptă</a></li>
+      <li><a href="#azi-jurnal">Azi și Jurnal</a></li>
+      <li><a href="#raport">Raportul lunar</a></li>
+      <li><a href="#flux">Flux și „Azi pe plus”</a></li>
+      <li><a href="#sfaturi">Sfaturi pentru lucrul cu copiii</a></li>
+      <li><a href="#intrebari">Întrebări frecvente</a></li>
+    </ol>
+  </nav>
+
+  <section id="ce-este">
+    <h2><span class="n">1</span>Ce este Scorul zilei</h2>
+    <p>O aplicație simplă în care se notează faptele bune <span class="pill plus">+</span> și cele mai puțin bune <span class="pill minus">−</span>, fiecare cu un număr de puncte între 1 și 20. Adunate, ele dau <b>scorul zilei</b>. Ideea nu este să aduni cât mai multe puncte, ci să fii sincer, să notezi și ce nu a mers, și să închei ziua <b>pe plus</b>.</p>
+    <p>Pentru un educator, aplicația are un <b>mod educator</b>: ții scorul pentru fiecare copil, separat de al tău, dintr-un singur cont. Copiii nu au conturi și nu au nevoie de telefon; ei sunt nume în contul tău. Tot ce notezi pentru copii rămâne privat: nu apare nicăieri în afara contului tău.</p>
+  </section>
+
+  <section id="pornire">
+    <h2><span class="n">2</span>Primii pași: aplicația și contul</h2>
+    <ol>
+      <li>Deschide pe telefon adresa <b translate="no">https://ionutrao.github.io/scor/</b>.</li>
+      <li>Pune aplicația pe ecranul principal, ca să o deschizi ca pe orice aplicație:
+        <ul>
+          <li><b>Android (Chrome):</b> meniul cu trei puncte <span class="ui">⋮</span>, apoi <span class="ui">Adaugă pe ecranul principal</span> sau <span class="ui">Instalează aplicația</span>.</li>
+          <li><b>iPhone (Safari):</b> butonul de partajare <span class="ui">⬆</span>, apoi <span class="ui">Adaugă pe ecranul principal</span>.</li>
+        </ul>
+      </li>
+      <li>Creează un cont cu adresa de e-mail și o parolă, apoi scrie-ți prenumele. Prenumele este singurul lucru pe care îl văd ceilalți, în Flux.</li>
+    </ol>
+    <div class="tip"><b>Un singur cont, mai multe telefoane.</b> Dacă intri cu același e-mail și pe tabletă sau pe alt telefon, vezi aceleași date: copiii, activitățile, rapoartele.</div>
+  </section>
+
+  <section id="educator">
+    <h2><span class="n">3</span>Pornește modul educator și adaugă copiii</h2>
+    <ol>
+      <li>Deschide <span class="ui">Profil</span> (jos, dreapta).</li>
+      <li>La <b>Mod educator</b>, bifează <span class="ui">Țin scorul și pentru copii</span>.</li>
+      <li>Apasă <span class="ui">Adaugă copil</span>, scrie prenumele (sau prenumele și inițiala, dacă ai doi copii cu același nume) și confirmă. Poți adăuga până la 12 copii.</li>
+    </ol>
+    <p>Copiii apar în lista din Profil. De acolo poți și <b>scoate</b> un copil, cu butonul <span class="ui">×</span> de lângă nume: dispar și toate activitățile notate pentru el, așa că aplicația cere confirmare.</p>
+    <div class="tip"><b>Sfat:</b> folosește doar prenumele copiilor. Numele de familie nu sunt necesare și nu trebuie să ajungă în telefon.</div>
+  </section>
+
+  <section id="pentru-cine">
+    <h2><span class="n">4</span>Butonul „Pentru cine?”</h2>
+    <p>Cât timp modul educator este pornit, în colțul din dreapta sus al fiecărui ecran stă un buton rotunjit care arată <b>pentru cine</b> lucrezi acum: <span class="ui">Eu</span> sau numele unui copil. Apasă-l și alege din listă.</p>
+    <ul>
+      <li>Alegerea rămâne pe toate ecranele: <b>Azi</b>, <b>Jurnal</b> și formularul de notare arată și notează pentru cel ales.</li>
+      <li>Lista este și <b>privirea de ansamblu</b>: lângă fiecare nume vezi scorul de azi și, dacă există, seria de zile pe plus.</li>
+      <li>Cu cel puțin doi copii apare butonul <span class="ui">după scor</span>: apăsat, copiii se așază după scorul de azi, cel mai mare primul. Fără el, rămân în ordinea în care i-ai adăugat. Alegerea se ține minte pe telefonul tău.</li>
+      <li>Tot de aici poți <span class="ui">Adăuga copil</span>.</li>
+    </ul>
+  </section>
+
+  <section id="notare">
+    <h2><span class="n">5</span>Notează o faptă</h2>
+    <ol>
+      <li>Alege copilul din butonul din colț (sub titlu scrie „pentru Maria”).</li>
+      <li>Pe ecranul <b>Azi</b> apasă <span class="ui">+ Faptă bună</span> sau <span class="ui">− Mai puțin bună</span>.</li>
+      <li>Alege un titlu din <b>favorite</b> sau scrie unul nou (până la 40 de caractere). Favoritele sunt comune pentru toți copiii; bifa <span class="ui">Păstrează în favorite</span> adaugă titlul nou în listă.</li>
+      <li>Alege punctele, de la 1 la 20. Sugestie: 5 pentru lucruri mici de zi cu zi, 10 pentru un efort real, 20 rar, pentru ceva deosebit.</li>
+      <li>La nevoie adaugă <b>detalii</b> (ce s-a întâmplat, în câteva cuvinte) sau o <b>poză</b> făcută pe loc. Detaliile apar în raportul lunar.</li>
+      <li>Apasă <span class="ui">Salvează</span>.</li>
+    </ol>
+    <p>Activitatea apare în lista zilei. Apăsând pe ea o poți <b>șterge</b> sau îi poți schimba detaliile și poza; titlul și punctele nu se mai schimbă, așa că este bine să fie corecte de la început.</p>
+    <div class="warn"><b>Activitățile copiilor sunt întotdeauna private.</b> Nu apar în Flux, nu intră în „Azi pe plus” și nu pot fi făcute publice. Doar activitățile tale, notate cu „Eu”, pot fi arătate celorlalți, și numai dacă alegi tu asta la fiecare în parte.</div>
+  </section>
+
+  <section id="azi-jurnal">
+    <h2><span class="n">6</span>Azi și Jurnal</h2>
+    <h3>Azi</h3>
+    <p>Scorul de azi al celui ales, <b>seria pe plus</b> (câte zile la rând a încheiat pe plus), totalul pe ultimele 7 zile și recordul de serie. Dedesubt, activitățile zilei. O zi contează în serie abia când este pe plus; dimineața, până la prima faptă bună, seria rămâne cea de până ieri.</p>
+    <h3>Jurnal</h3>
+    <p>Ultimele zile ale copilului ales, cu scorul fiecăreia; apasă pe o zi ca să-i vezi activitățile. Sub grafic, un rând rezumă săptămâna: câte zile au fost pe plus și care a fost cea mai bună.</p>
+  </section>
+
+  <section id="raport">
+    <h2><span class="n">7</span>Raportul lunar</h2>
+    <p>În <span class="ui">Profil</span>, sub lista copiilor, apasă <span class="ui">Raport lunar</span>. Alege luna cu săgețile <span class="ui">‹</span> <span class="ui">›</span>. Pentru fiecare copil vezi:</p>
+    <ul>
+      <li>totalul lunii și câte zile au fost pe plus din zilele notate;</li>
+      <li>cea mai bună zi și cea mai lungă serie de zile pe plus din acea lună;</li>
+      <li>toate activitățile lunii, cu data, ora, punctele și detaliile.</li>
+    </ul>
+    <p>Copiii sunt așezați după totalul lunii, cel mai mare primul.</p>
+    <h3>Salvează PDF</h3>
+    <p>Butonul <span class="ui">Salvează PDF</span> deschide fereastra de tipărire a telefonului. Alege acolo <span class="ui">Salvează ca PDF</span> (Android) sau, pe iPhone, apasă <span class="ui">Partajează</span> și trimite-l mai departe. Fiecare copil iese pe pagina lui, așa că poți da părinților doar pagina copilului lor.</p>
+    <h3>Descarcă pentru Excel</h3>
+    <p>Butonul <span class="ui">Descarcă pentru Excel</span> salvează un fișier numit <span translate="no">raport-AAAA-LL.csv</span> cu toate activitățile lunii, câte una pe rând: copil, dată, oră, fel, titlu, puncte, detalii. Se deschide direct în Excel sau în Google Sheets, unde poți filtra și calcula cum vrei.</p>
+    <div class="tip"><b>Bun de știut:</b> raportul se face din datele de pe telefon, în acel moment. Dacă ai notat de pe alt telefon, deschide întâi aplicația și așteaptă câteva secunde ca totul să se aducă la zi.</div>
+  </section>
+
+  <section id="flux">
+    <h2><span class="n">8</span>Flux și „Azi pe plus”</h2>
+    <p><b>Flux</b> arată activitățile pe care alți oameni au ales să le facă publice, cu prenumele lor, și le poți încuraja cu o apăsare. La o faptă mai puțin bună făcută publică butonul spune <span class="ui">Mâine mai bine</span>: cine recunoaște o scăpare merită un cuvânt bun, nu aplauze pentru scăpare. Când cineva a postat ceva ce nu ai văzut încă, pe butonul <b>Flux</b> apare un punct.</p>
+    <p>Cardul <b>Azi pe plus</b> este un țel comun pentru adulți: cine participă vede câți dintre participanți sunt pe plus azi și cine. Participarea este la alegere și arată un singur lucru despre tine: dacă ziua ta este pe plus.</p>
+    <p>Toate acestea sunt pentru contul tău de adult. <b>Copiii nu apar niciodată în Flux și nu intră în „Azi pe plus”.</b></p>
+  </section>
+
+  <section id="sfaturi">
+    <h2><span class="n">9</span>Sfaturi pentru lucrul cu copiii</h2>
+    <ul>
+      <li><b>Fiecare copil se compară cu el însuși.</b> Scorul de ieri și seria de zile pe plus spun mai mult decât locul în listă. Folosește ordinea „după scor” pentru tine, ca să vezi repede cine a avut o zi grea, nu ca un clasament afișat copiilor.</li>
+      <li><b>Notează și minusurile.</b> O zi doar cu plusuri nu învață nimic. Un minus notat cinstit, cu două cuvinte la detalii, și o zi care se încheie totuși pe plus este exact lecția pe care o vrea aplicația.</li>
+      <li><b>Notează împreună cu copilul</b> când se poate: el spune ce a făcut, tu alegi punctele. Recunoașterea unei greșeli este un pas bun, nu un motiv pentru puncte în plus la minus.</li>
+      <li><b>Țelul zilei este „pe plus”,</b> nu un număr mare. Un copil cu +5 care a avut și un minus notat a avut o zi mai bună decât unul cu +20 fără niciun minus recunoscut.</li>
+      <li><b>Raportul lunar este pentru părinți și pentru tine,</b> nu pentru afișat la avizier. Dă fiecărui părinte pagina copilului lui.</li>
+    </ul>
+  </section>
+
+  <section id="intrebari">
+    <h2><span class="n">10</span>Întrebări frecvente</h2>
+    <dl class="faq">
+      <dt>Unde sunt datele?</dt>
+      <dd>În contul tău, pe un server, și o copie pe fiecare telefon pe care ai intrat. Activitățile copiilor nu pot fi văzute de alți utilizatori.</dd>
+      <dt>Copiii pot vedea aplicația?</dt>
+      <dd>Doar dacă le arăți tu telefonul. Ei nu au conturi și nu primesc nimic.</dd>
+      <dt>Am notat greșit.</dt>
+      <dd>Apasă pe activitate, în Azi sau în Jurnal, și șterge-o, apoi noteaz-o din nou. Detaliile și poza se pot schimba fără ștergere.</dd>
+      <dt>Pot schimba numele unui copil?</dt>
+      <dd>Deocamdată nu. Scoate-l și adaugă-l din nou cu numele corect; activitățile lui se pierd, așa că fă asta cât e lista goală.</dd>
+      <dt>Merge fără internet?</dt>
+      <dd>Da, notarea merge și fără internet; totul se trimite în cont când revine conexiunea. Doar Flux și raportul de pe alt telefon au nevoie de internet.</dd>
+      <dt>Am uitat parola.</dt>
+      <dd>Resetarea parolei nu este încă pornită în această perioadă de testare. Scrie-i persoanei de la care ai primit aplicația.</dd>
+      <dt>Aplicația este gata?</dt>
+      <dd>Este în testare, cu un grup mic de oameni. Orice observație ajută: ce lipsește, ce încurcă, ce nu se înțelege.</dd>
+    </dl>
+  </section>
+
+  <footer>
+    Scorul zilei · Ghid pentru educatori · versiunea 0.7.2 · Aplicația: <span translate="no">https://ionutrao.github.io/scor/</span>
+  </footer>
+</div>
+</body>
+</html>

@@ -57,6 +57,7 @@ try:
         go(a, "profil")
         soft(lambda: a.wait_for_selector("#edu", timeout=8000), "Profilul are sectiunea Mod educator")
         check(not a.is_checked("#edu-on") and a.locator("#kid-list, #kid-none").count() == 0, "oprit la inceput, fara lista de copii")
+        check(a.get_attribute('[data-focus="guide"]', "href") == "ghid.html" and a.get_attribute('[data-focus="guide"]', "target") == "_blank", "sectiunea trimite la ghidul pentru educatori, in alta fila")
         a.check("#edu-on")
         soft(lambda: a.wait_for_selector("#kid-none", timeout=8000), "pornit: apare lista de copii, goala")
         check(a.locator('[data-act="who-open"]').count() == 1 and text(a, '[data-act="who-open"]') == "Eu", "si butonul cu cel ales, pe Eu, chiar si in Profil")
