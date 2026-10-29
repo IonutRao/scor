@@ -382,6 +382,9 @@ html.cam-open, html.cam-open body { overflow: hidden; }
 .post-top, .post-bot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .post-who { min-width: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .post-who b { font-weight: 700; color: var(--ink); }
+.post-score { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: var(--control); color: var(--control-ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.post-score.plus { background: var(--plus-tint); color: var(--plus-text); }
+.post-score.minus { background: var(--minus-tint); color: var(--minus-text); }
 .post-t { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .post-more { display: block; width: 100%; text-align: left; }
 .post-more:active { opacity: .6; }
@@ -606,6 +609,7 @@ var T = {
     pulseJoin: 'Particip', pulseLeave: 'Mă retrag', pulseYou: 'tu', pulseAnd: 'și',
     pulseWhy: 'Un țel comun: toți pe plus la finalul zilei. Despre tine se vede un singur lucru, dacă ești pe plus azi.',
     pulseJoined: 'Participi la „Azi pe plus”', pulseLeft: 'Nu mai participi',
+    showTitle: 'Scorul zilei la vedere', showOn: 'Arată scorul meu de azi lângă numele meu în flux', showSub: 'Scorul întreg, cu tot cu activitățile private (fără cele ale copiilor). Oprit până nu alegi tu altfel.', postScore: '{x} azi', postScoreTitle: 'scorul zilei',
     eduTitle: 'Mod educator', eduOn: 'Țin scorul și pentru copii', eduSub: 'Copiii nu au conturi, sunt nume în contul tău. Activitățile lor rămân private: nu apar în flux și nu intră în „Azi pe plus”.',
     eduKids: 'Copii', eduNoKids: 'Niciun copil adăugat încă.', kidAdd: 'Adaugă copil', kidNew: 'Copil nou', kidNameLabel: 'Numele copilului', kidNameHint: 'Un prenume e de ajuns. Între 1 și 20 de litere.',
     kidNameInvalid: 'Numele are între 1 și 20 de litere, fără < sau >.', kidNameTaken: 'Mai ai un copil cu numele acesta.', kidAdded: '{x} a fost adăugat', kidsMax: 'Cel mult 30 de copii.',
@@ -699,6 +703,7 @@ var T = {
     pulseJoin: 'Count me in', pulseLeave: 'Leave', pulseYou: 'you', pulseAnd: 'and',
     pulseWhy: 'A shared goal: everyone on plus by the end of the day. Only one thing about you is shown, whether you are on plus today.',
     pulseJoined: 'You are in “On plus today”', pulseLeft: 'You left',
+    showTitle: 'Day score in the open', showOn: 'Show my score for today next to my name in the feed', showSub: 'The whole score, private activities included (not the children’s). Off until you choose otherwise.', postScore: '{x} today', postScoreTitle: 'score for today',
     eduTitle: 'Educator mode', eduOn: 'I also keep score for children', eduSub: 'Children have no accounts, they are names in your account. Their activities stay private: not in the feed, not in “On plus today”.',
     eduKids: 'Children', eduNoKids: 'No child added yet.', kidAdd: 'Add a child', kidNew: 'New child', kidNameLabel: 'The child’s name', kidNameHint: 'A first name is enough. 1 to 20 letters.',
     kidNameInvalid: 'The name has 1 to 20 letters, without < or >.', kidNameTaken: 'You already have a child with this name.', kidAdded: '{x} was added', kidsMax: 'At most 30 children.',
@@ -1297,13 +1302,13 @@ var CAM = (function () {
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.7.3';
+  var VERSION = '0.8';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
   var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume', 'copil', 'raport'] : ['plus', 'minus', 'detalii', 'copil', 'raport']);
   /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, telul comun, respectiv copiii. */
-  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6;
+  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6, SHOW_FROM = 7;
   /* Cel mult atatia copii in modul educator. */
   var KIDS_MAX = 30;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -1490,7 +1495,9 @@ var CAM = (function () {
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
       lastSync: 0, pubDefault: false, sv: 0, pulse: null, feedSeen: 0,
       /* Modul educator: pornit sau nu, lista copiilor (id, nume) si, doar pe acest dispozitiv, cine este ales acum (who). */
-      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null, whoSort: 'added'
+      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null, whoSort: 'added',
+      /* Scorul zilei la vedere in flux, la alegerea omului; showRev/showSynced ca la favorite. */
+      show: false, showRev: 0, showSynced: 0
     };
   }
 
@@ -1548,6 +1555,9 @@ var CAM = (function () {
     d.favs = cleanFavs(d.favs);
     d.edu = cleanEdu(d.edu);
     d.eduRev = d.eduRev || 0;
+    d.show = !!d.show;
+    d.showRev = d.showRev || 0;
+    d.showSynced = d.showSynced || 0;
     d.eduSynced = d.eduSynced || 0;
     d.who = typeof d.who === 'string' && findKid(d.who, d.edu) ? d.who : null;
     d.entries.forEach(function (e) {
@@ -1629,6 +1639,8 @@ var CAM = (function () {
   /* Modul educator se poate porni fara cont oricand; cu cont, doar daca baza de date stie de copii. */
   function eduAvail() { return !BACKEND || data.sv >= EDU_FROM; }
   function eduOn() { return eduAvail() && data.edu.on; }
+  /* Scorul la vedere cere baza de date adusa la versiunea care il stie. */
+  function showOn() { return BACKEND && data.sv >= SHOW_FROM; }
   /* Copilul ales acum, sau null pentru adult. O alegere ramasa fara copil (sters, mod oprit) inseamna adultul. */
   function whoNow() { return eduOn() && data.who && findKid(data.who) ? data.who : null; }
   function whoName() { var k = whoNow() ? findKid(whoNow()) : null; return k ? k.name : tr('me'); }
@@ -1643,7 +1655,9 @@ var CAM = (function () {
 
   function pendingCount() {
     var n = data.outbox.del.length + data.outbox.vis.length + data.outbox.note.length + data.outbox.photo.length +
-      (data.favsRev !== data.favsSynced ? 1 : 0);
+      (data.favsRev !== data.favsSynced ? 1 : 0) +
+      (data.eduRev !== data.eduSynced && data.sv >= EDU_FROM ? 1 : 0) +
+      (data.showRev !== data.showSynced && data.sv >= SHOW_FROM ? 1 : 0);
     for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1) n++;
     return n;
   }
@@ -1663,6 +1677,7 @@ var CAM = (function () {
   function canSend() {
     if (data.outbox.del.length || data.outbox.vis.length || data.outbox.note.length || data.favsRev !== data.favsSynced) return true;
     if (data.eduRev !== data.eduSynced && data.sv >= EDU_FROM) return true;
+    if (data.showRev !== data.showSynced && data.sv >= SHOW_FROM) return true;
     for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1 && canTravel(data.entries[i])) return true;
     return photoOps(null).length > 0;
   }
@@ -1685,7 +1700,8 @@ var CAM = (function () {
     var sent = {
       ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), note: data.outbox.note.slice(), photo: [],
       rev: data.favsRev, favs: data.favsRev !== data.favsSynced,
-      eduRev: data.eduRev, edu: data.eduRev !== data.eduSynced && data.sv >= EDU_FROM
+      eduRev: data.eduRev, edu: data.eduRev !== data.eduSynced && data.sv >= EDU_FROM,
+      showRev: data.showRev, show: data.showRev !== data.showSynced && data.sv >= SHOW_FROM
     };
     batch.forEach(function (e) { sent.ids[e.id] = true; });
     /* Contul afla de o poza abia dupa ce fisierul ei a ajuns acolo, si doar pentru o activitate pe care o are sau o primeste acum. */
@@ -1709,6 +1725,7 @@ var CAM = (function () {
     if (sent.note.length) args.p_note = sent.note;
     if (sent.photo.length) args.p_photo = sent.photo;
     if (sent.edu) args.p_kids = data.edu;
+    if (sent.show) args.p_show = !!data.show;
     API.rpc('sync', args).then(function (res) {
       if (late()) return;
       applySync(res, sent);
@@ -1803,6 +1820,9 @@ var CAM = (function () {
       if (res.kids && typeof res.kids === 'object') data.edu = cleanEdu(res.kids);
       else if (data.edu.on || data.edu.list.length) data.eduRev++; /* contul nu stie inca de copiii de aici: pleaca la drumul urmator */
     }
+    /* Scorul la vedere, la fel. */
+    if (sent.show) data.showSynced = sent.showRev;
+    if (data.showRev === data.showSynced && Number(res.v) >= SHOW_FROM && typeof res.show === 'boolean') data.show = res.show;
     data.sv = Number(res.v) > 0 ? Number(res.v) : 0;
     /* Numele afisat, schimbat poate de pe alt dispozitiv. */
     if (typeof res.name === 'string' && res.name && res.name !== data.name) data.name = res.name;
@@ -2244,6 +2264,14 @@ var CAM = (function () {
 
   /* ---------- flux ---------- */
 
+  /* Argumentele unei cereri de flux. Ziua de pe dispozitiv pleaca doar catre o baza care o cunoaste (scorul la vedere):
+     una mai veche nu are parametrul p_day si ar refuza cererea. */
+  function feedArgs(before, limit) {
+    var args = { p_lang: lang, p_before: before, p_limit: limit };
+    if (showOn()) args.p_day = L.dayKey(new Date());
+    return args;
+  }
+
   /* O cerere de flux este pe drum. Una ramasa fara raspuns mai mult de jumatate de minut nu mai tine locul ocupat. */
   function feedBusy() { return (feed.loading || feed.quiet) && Date.now() - feed.started < 30000; }
 
@@ -2256,7 +2284,7 @@ var CAM = (function () {
     feed.started = sent;
     if (reset) { feed.error = ''; feed.tried = sent; }
     var before = !reset && feed.items.length ? Number(feed.items[feed.items.length - 1].ts) : null;
-    API.rpc('feed', { p_lang: lang, p_before: before, p_limit: FEED_PAGE }).then(function (rows) {
+    API.rpc('feed', feedArgs(before, FEED_PAGE)).then(function (rows) {
       if (seq !== feedSeq) return;
       rows = Array.isArray(rows) ? rows : [];
       if (reset) {
@@ -2295,7 +2323,7 @@ var CAM = (function () {
     feed.quiet = true;
     feed.started = sent;
     feed.tried = sent;
-    API.rpc('feed', { p_lang: lang, p_before: null, p_limit: limit }).then(function (rows) {
+    API.rpc('feed', feedArgs(null, limit)).then(function (rows) {
       if (seq !== feedSeq) return;
       feed.quiet = false;
       if (!Array.isArray(rows)) { feed.fails++; return; }
@@ -2367,7 +2395,7 @@ var CAM = (function () {
     var mine = session;
     peekBusy = true;
     peekAt = Date.now();
-    API.rpc('feed', { p_lang: lang, p_before: null, p_limit: 5 }).then(function (rows) {
+    API.rpc('feed', feedArgs(null, 5)).then(function (rows) {
       if (mine !== session || auth !== 'in') return;
       var was = feedNew();
       if (Array.isArray(rows)) noteFresh(rows);
@@ -3095,7 +3123,9 @@ var CAM = (function () {
         /* Adresa pozei vine de la server; se foloseste doar daca arata cum trebuie. */
         if (it.photo && !PHOTO.size(it.photo)) it.photo = null;
         return '<li class="post" data-post="' + esc(it.id) + '">' +
-          '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b> · ' + esc(ago(Number(it.ts))) + '</span>' +
+          '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b>' +
+            (typeof it.score === 'number' ? ' <span class="post-score ' + kind(it.score) + '" title="' + esc(tr('postScoreTitle')) + '">' + esc(tr('postScore', { x: L.fmt(it.score) })) + '</span>' : '') +
+            ' · ' + esc(ago(Number(it.ts))) + '</span>' +
             '<span class="pill ' + (it.type === 'minus' ? 'minus' : 'plus') + '">' + L.fmt(sign) + '</span></div>' +
           (it.note || it.photo
             ? '<button type="button" class="post-t post-more" data-act="post-note" data-id="' + esc(it.id) + '" data-focus="n-' + esc(it.id) + '" aria-expanded="' + !!openNotes[it.id] + '">' +
@@ -3170,10 +3200,19 @@ var CAM = (function () {
       top +
       '<section class="sect"><h2 id="lang-h">' + esc(tr('language')) + '</h2>' +
         '<div class="seg" role="group" aria-labelledby="lang-h">' + langButtons() + '</div></section>' +
+      showSection() +
       eduSection() +
       '<section class="sect"><h2>' + esc(tr('favsPlus')) + '</h2>' + favList('plus') + '</section>' +
       '<section class="sect"><h2>' + esc(tr('favsMinus')) + '</h2>' + favList('minus') + '</section>' +
       bottom;
+  }
+
+  /* Scorul zilei la vedere, in Profil: o bifa, oprita pentru toata lumea pana nu o pune omul. */
+  function showSection() {
+    if (!showOn()) return '';
+    return '<section class="sect" id="show"><h2>' + esc(tr('showTitle')) + '</h2>' +
+      '<label class="check"><input type="checkbox" id="show-on"' + (data.show ? ' checked' : '') + '><span>' + esc(tr('showOn')) + '</span></label>' +
+      '<p class="note">' + esc(tr('showSub')) + '</p></section>';
   }
 
   /* Modul educator, in Profil: o bifa si, cand e pornit, lista copiilor. */
@@ -4049,6 +4088,12 @@ var CAM = (function () {
         if (!data.edu.on) data.who = null;
         persist();
         render();
+        queueSync();
+      }
+      if (ev.target && ev.target.id === 'show-on') {
+        data.show = ev.target.checked;
+        data.showRev++;
+        persist();
         queueSync();
       }
       if (ev.target && ev.target.id === 'pic-file') pickPhoto(ev.target);

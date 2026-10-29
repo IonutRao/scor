@@ -75,6 +75,9 @@
 .post-top, .post-bot { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .post-who { min-width: 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .post-who b { font-weight: 700; color: var(--ink); }
+.post-score { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 999px; background: var(--control); color: var(--control-ink); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.post-score.plus { background: var(--plus-tint); color: var(--plus-text); }
+.post-score.minus { background: var(--minus-tint); color: var(--minus-text); }
 .post-t { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
 .post-more { display: block; width: 100%; text-align: left; }
 .post-more:active { opacity: .6; }

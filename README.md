@@ -23,6 +23,7 @@ Aplicația rulează la https://ionutrao.github.io/scor/ și se poate pune pe ecr
 
 ## Versiuni
 
+- 0.8: cine vrea își arată scorul zilei lângă numele lui în flux (bifă în Profil, oprită până nu alegi tu). Cere rularea din nou a scriptului `supabase/schema.sql`.
 - 0.7.3: până la 30 de copii într-un cont, cât o clasă (era 12).
 - 0.7.2: ghidul pentru educatori, ca pagină (`ghid.html`) și PDF, cu link din secțiunea Mod educator a Profilului.
 - 0.7.1: pentru educatori, lista „Pentru cine?” se poate așeza „după scor”, iar în Profil există „Raport lunar”: rezumatul lunii pentru fiecare copil, de salvat ca PDF sau de descărcat pentru Excel.

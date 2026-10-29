@@ -1,4 +1,4 @@
--- Scorul zilei: baza de date (versiunea 0.6: modul educator)
+-- Scorul zilei: baza de date (versiunea 0.8: scorul zilei la vedere in flux, la alegere)
 --
 -- Se lipeste in Supabase, la SQL Editor, si se apasa Run.
 -- Poate fi rulat din nou oricand: nu sterge si nu modifica datele existente.
@@ -123,6 +123,10 @@ begin
 end
 $$;
 
+-- Scorul zilei la vedere (din versiunea 0.8): cine bifeaza asta are scorul lui de azi (cu tot cu activitatile private,
+-- fara cele ale copiilor) aratat langa numele lui in flux. Oprit pentru toata lumea pana nu alege omul altfel.
+alter table public.settings add column if not exists show_score boolean not null default false;
+
 -- Incurajarile: cel mult una de la un utilizator pentru o activitate.
 create table if not exists public.cheers (
   entry_id uuid not null references public.entries (id) on delete cascade,
@@ -159,8 +163,8 @@ grant insert (id, name) on public.profiles to authenticated;
 grant update (name) on public.profiles to authenticated;
 
 grant select on public.settings to authenticated;
-grant insert (user_id, favs, kids, updated_at) on public.settings to authenticated;
-grant update (favs, kids, updated_at) on public.settings to authenticated;
+grant insert (user_id, favs, kids, show_score, updated_at) on public.settings to authenticated;
+grant update (favs, kids, show_score, updated_at) on public.settings to authenticated;
 
 -- La activitati se pot schimba ulterior doar vizibilitatea, detaliile si poza. Numarul de incurajari nu poate fi scris de nimeni.
 grant select, delete on public.entries to authenticated;
@@ -364,6 +368,7 @@ $$;
 drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text);
 drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb);
 drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb);
+drop function if exists public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb);
 create or replace function public.sync(
   p_add jsonb default '[]'::jsonb,
   p_del jsonb default '[]'::jsonb,
@@ -372,7 +377,8 @@ create or replace function public.sync(
   p_lang text default 'ro',
   p_note jsonb default '[]'::jsonb,
   p_photo jsonb default '[]'::jsonb,
-  p_kids jsonb default null
+  p_kids jsonb default null,
+  p_show boolean default null
 ) returns jsonb
 language plpgsql security invoker set search_path = '' as $$
 declare
@@ -385,6 +391,7 @@ declare
   v_rejected jsonb := '[]'::jsonb;
   v_favs jsonb;
   v_kids jsonb;
+  v_show boolean;
 begin
   if v_uid is null then
     raise exception 'not_signed_in';
@@ -506,7 +513,12 @@ begin
     on conflict (user_id) do update set kids = excluded.kids, updated_at = excluded.updated_at;
   end if;
 
-  select s.favs, s.kids into v_favs, v_kids from public.settings s where s.user_id = v_uid;
+  if p_show is not null then
+    insert into public.settings (user_id, show_score, updated_at) values (v_uid, p_show, now())
+    on conflict (user_id) do update set show_score = excluded.show_score, updated_at = excluded.updated_at;
+  end if;
+
+  select s.favs, s.kids, s.show_score into v_favs, v_kids, v_show from public.settings s where s.user_id = v_uid;
 
   -- Numele afisat vine si el cu starea contului: schimbat de pe alt dispozitiv, ajunge astfel si pe acesta.
   return jsonb_build_object(
@@ -521,18 +533,37 @@ begin
     ), '[]'::jsonb),
     'favs', v_favs,
     'kids', v_kids,
+    'show', coalesce(v_show, false),
     'rejected', v_rejected,
     'now', (extract(epoch from now()) * 1000)::bigint,
-    'v', 6
+    'v', 7
   );
 end
 $$;
 
 -- Fluxul: cele mai noi activitati publice, cu detaliile lor si cu locul pozei. Fara nimic privat, fara adrese de email.
+-- Scorul de azi al unui om, doar daca el a ales sa il arate (settings.show_score); altfel null. Aduna si activitatile
+-- lui private, de aceea ruleaza cu drepturile proprietarului bazei; nu intra activitatile copiilor. p_day este ziua
+-- de pe dispozitivul celui care se uita; una prea departata de azi este adusa la azi, ca sa nu se poata citi alte zile.
+create or replace function public.day_score(p_user uuid, p_day date default null) returns integer
+language sql stable security definer set search_path = '' as $$
+  select case
+    when exists (select 1 from public.settings s where s.user_id = p_user and s.show_score)
+    then coalesce((
+      select sum(case when e.type = 'minus' then -e.pts else e.pts end)::integer
+      from public.entries e
+      where e.user_id = p_user and e.kid is null
+        and e.day = case when p_day is null or abs(p_day - current_date) > 1 then current_date else p_day end
+    ), 0)
+  end;
+$$;
+
+drop function if exists public.feed(text, bigint, integer);
 create or replace function public.feed(
   p_lang text default null,
   p_before bigint default null,
-  p_limit integer default 30
+  p_limit integer default 30,
+  p_day date default null
 ) returns jsonb
 language sql stable security invoker set search_path = '' as $$
   select coalesce(jsonb_agg(to_jsonb(t) order by t.ts desc), '[]'::jsonb)
@@ -548,7 +579,8 @@ language sql stable security invoker set search_path = '' as $$
       exists (
         select 1 from public.cheers c
         where c.entry_id = e.id and c.user_id = (select auth.uid())
-      ) as cheered
+      ) as cheered,
+      public.day_score(e.user_id, p_day) as score
     from public.entries e
     join public.profiles p on p.id = e.user_id
     where e.is_public and e.kid is null
@@ -639,7 +671,7 @@ begin
     'up', v_up,
     'others', v_others,
     'you', v_you,
-    'v', 6
+    'v', 7
   );
 end
 $$;
@@ -661,8 +693,9 @@ $$;
 revoke all on function public.me() from public, anon;
 revoke all on function public.set_name(text) from public, anon;
 revoke all on function public.note_text(text) from public, anon;
-revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb) from public, anon;
-revoke all on function public.feed(text, bigint, integer) from public, anon;
+revoke all on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb, boolean) from public, anon;
+revoke all on function public.feed(text, bigint, integer, date) from public, anon;
+revoke all on function public.day_score(uuid, date) from public, anon;
 revoke all on function public.cheer(uuid, boolean) from public, anon;
 revoke all on function public.delete_my_account() from public, anon;
 revoke all on function public.pulse(date, boolean) from public, anon;
@@ -672,8 +705,9 @@ revoke all on function public.tg_entries_clamp() from public, anon, authenticate
 grant execute on function public.me() to authenticated;
 grant execute on function public.set_name(text) to authenticated;
 grant execute on function public.note_text(text) to authenticated;
-grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb) to authenticated;
-grant execute on function public.feed(text, bigint, integer) to authenticated;
+grant execute on function public.sync(jsonb, jsonb, jsonb, jsonb, text, jsonb, jsonb, jsonb, boolean) to authenticated;
+grant execute on function public.feed(text, bigint, integer, date) to authenticated;
+grant execute on function public.day_score(uuid, date) to authenticated;
 grant execute on function public.cheer(uuid, boolean) to authenticated;
 grant execute on function public.delete_my_account() to authenticated;
 grant execute on function public.pulse(date, boolean) to authenticated;

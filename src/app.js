@@ -5,13 +5,13 @@
   'use strict';
 
   var CFG = window.SCOR_BUILD || {};
-  var VERSION = '0.7.3';
+  var VERSION = '0.8';
   var KEY = 'scor.v1';
   var BACKEND = API.enabled();
   var MAIN = BACKEND ? ['azi', 'jurnal', 'flux', 'profil'] : ['azi', 'jurnal', 'profil'];
   var ROUTES = MAIN.concat(BACKEND ? ['plus', 'minus', 'detalii', 'nume', 'copil', 'raport'] : ['plus', 'minus', 'detalii', 'copil', 'raport']);
   /* De la ce versiune a scriptului din supabase/schema.sql stie serverul sa pastreze detalii, poze, telul comun, respectiv copiii. */
-  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6;
+  var NOTES_FROM = 3, PHOTOS_FROM = 4, PULSE_FROM = 5, EDU_FROM = 6, SHOW_FROM = 7;
   /* Cel mult atatia copii in modul educator. */
   var KIDS_MAX = 30;
   var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -198,7 +198,9 @@
       favsRev: 0, favsSynced: 0, outbox: { del: [], vis: [], note: [], photo: [], gone: [] }, uploads: [],
       lastSync: 0, pubDefault: false, sv: 0, pulse: null, feedSeen: 0,
       /* Modul educator: pornit sau nu, lista copiilor (id, nume) si, doar pe acest dispozitiv, cine este ales acum (who). */
-      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null, whoSort: 'added'
+      edu: { on: false, list: [] }, eduRev: 0, eduSynced: 0, who: null, whoSort: 'added',
+      /* Scorul zilei la vedere in flux, la alegerea omului; showRev/showSynced ca la favorite. */
+      show: false, showRev: 0, showSynced: 0
     };
   }
 
@@ -256,6 +258,9 @@
     d.favs = cleanFavs(d.favs);
     d.edu = cleanEdu(d.edu);
     d.eduRev = d.eduRev || 0;
+    d.show = !!d.show;
+    d.showRev = d.showRev || 0;
+    d.showSynced = d.showSynced || 0;
     d.eduSynced = d.eduSynced || 0;
     d.who = typeof d.who === 'string' && findKid(d.who, d.edu) ? d.who : null;
     d.entries.forEach(function (e) {
@@ -337,6 +342,8 @@
   /* Modul educator se poate porni fara cont oricand; cu cont, doar daca baza de date stie de copii. */
   function eduAvail() { return !BACKEND || data.sv >= EDU_FROM; }
   function eduOn() { return eduAvail() && data.edu.on; }
+  /* Scorul la vedere cere baza de date adusa la versiunea care il stie. */
+  function showOn() { return BACKEND && data.sv >= SHOW_FROM; }
   /* Copilul ales acum, sau null pentru adult. O alegere ramasa fara copil (sters, mod oprit) inseamna adultul. */
   function whoNow() { return eduOn() && data.who && findKid(data.who) ? data.who : null; }
   function whoName() { var k = whoNow() ? findKid(whoNow()) : null; return k ? k.name : tr('me'); }
@@ -351,7 +358,9 @@
 
   function pendingCount() {
     var n = data.outbox.del.length + data.outbox.vis.length + data.outbox.note.length + data.outbox.photo.length +
-      (data.favsRev !== data.favsSynced ? 1 : 0);
+      (data.favsRev !== data.favsSynced ? 1 : 0) +
+      (data.eduRev !== data.eduSynced && data.sv >= EDU_FROM ? 1 : 0) +
+      (data.showRev !== data.showSynced && data.sv >= SHOW_FROM ? 1 : 0);
     for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1) n++;
     return n;
   }
@@ -371,6 +380,7 @@
   function canSend() {
     if (data.outbox.del.length || data.outbox.vis.length || data.outbox.note.length || data.favsRev !== data.favsSynced) return true;
     if (data.eduRev !== data.eduSynced && data.sv >= EDU_FROM) return true;
+    if (data.showRev !== data.showSynced && data.sv >= SHOW_FROM) return true;
     for (var i = 0; i < data.entries.length; i++) if (data.entries[i].sync === 1 && canTravel(data.entries[i])) return true;
     return photoOps(null).length > 0;
   }
@@ -393,7 +403,8 @@
     var sent = {
       ids: {}, del: data.outbox.del.slice(), vis: data.outbox.vis.slice(), note: data.outbox.note.slice(), photo: [],
       rev: data.favsRev, favs: data.favsRev !== data.favsSynced,
-      eduRev: data.eduRev, edu: data.eduRev !== data.eduSynced && data.sv >= EDU_FROM
+      eduRev: data.eduRev, edu: data.eduRev !== data.eduSynced && data.sv >= EDU_FROM,
+      showRev: data.showRev, show: data.showRev !== data.showSynced && data.sv >= SHOW_FROM
     };
     batch.forEach(function (e) { sent.ids[e.id] = true; });
     /* Contul afla de o poza abia dupa ce fisierul ei a ajuns acolo, si doar pentru o activitate pe care o are sau o primeste acum. */
@@ -417,6 +428,7 @@
     if (sent.note.length) args.p_note = sent.note;
     if (sent.photo.length) args.p_photo = sent.photo;
     if (sent.edu) args.p_kids = data.edu;
+    if (sent.show) args.p_show = !!data.show;
     API.rpc('sync', args).then(function (res) {
       if (late()) return;
       applySync(res, sent);
@@ -511,6 +523,9 @@
       if (res.kids && typeof res.kids === 'object') data.edu = cleanEdu(res.kids);
       else if (data.edu.on || data.edu.list.length) data.eduRev++; /* contul nu stie inca de copiii de aici: pleaca la drumul urmator */
     }
+    /* Scorul la vedere, la fel. */
+    if (sent.show) data.showSynced = sent.showRev;
+    if (data.showRev === data.showSynced && Number(res.v) >= SHOW_FROM && typeof res.show === 'boolean') data.show = res.show;
     data.sv = Number(res.v) > 0 ? Number(res.v) : 0;
     /* Numele afisat, schimbat poate de pe alt dispozitiv. */
     if (typeof res.name === 'string' && res.name && res.name !== data.name) data.name = res.name;
@@ -952,6 +967,14 @@
 
   /* ---------- flux ---------- */
 
+  /* Argumentele unei cereri de flux. Ziua de pe dispozitiv pleaca doar catre o baza care o cunoaste (scorul la vedere):
+     una mai veche nu are parametrul p_day si ar refuza cererea. */
+  function feedArgs(before, limit) {
+    var args = { p_lang: lang, p_before: before, p_limit: limit };
+    if (showOn()) args.p_day = L.dayKey(new Date());
+    return args;
+  }
+
   /* O cerere de flux este pe drum. Una ramasa fara raspuns mai mult de jumatate de minut nu mai tine locul ocupat. */
   function feedBusy() { return (feed.loading || feed.quiet) && Date.now() - feed.started < 30000; }
 
@@ -964,7 +987,7 @@
     feed.started = sent;
     if (reset) { feed.error = ''; feed.tried = sent; }
     var before = !reset && feed.items.length ? Number(feed.items[feed.items.length - 1].ts) : null;
-    API.rpc('feed', { p_lang: lang, p_before: before, p_limit: FEED_PAGE }).then(function (rows) {
+    API.rpc('feed', feedArgs(before, FEED_PAGE)).then(function (rows) {
       if (seq !== feedSeq) return;
       rows = Array.isArray(rows) ? rows : [];
       if (reset) {
@@ -1003,7 +1026,7 @@
     feed.quiet = true;
     feed.started = sent;
     feed.tried = sent;
-    API.rpc('feed', { p_lang: lang, p_before: null, p_limit: limit }).then(function (rows) {
+    API.rpc('feed', feedArgs(null, limit)).then(function (rows) {
       if (seq !== feedSeq) return;
       feed.quiet = false;
       if (!Array.isArray(rows)) { feed.fails++; return; }
@@ -1075,7 +1098,7 @@
     var mine = session;
     peekBusy = true;
     peekAt = Date.now();
-    API.rpc('feed', { p_lang: lang, p_before: null, p_limit: 5 }).then(function (rows) {
+    API.rpc('feed', feedArgs(null, 5)).then(function (rows) {
       if (mine !== session || auth !== 'in') return;
       var was = feedNew();
       if (Array.isArray(rows)) noteFresh(rows);
@@ -1803,7 +1826,9 @@
         /* Adresa pozei vine de la server; se foloseste doar daca arata cum trebuie. */
         if (it.photo && !PHOTO.size(it.photo)) it.photo = null;
         return '<li class="post" data-post="' + esc(it.id) + '">' +
-          '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b> · ' + esc(ago(Number(it.ts))) + '</span>' +
+          '<div class="post-top"><span class="post-who"><b>' + esc(it.author) + '</b>' +
+            (typeof it.score === 'number' ? ' <span class="post-score ' + kind(it.score) + '" title="' + esc(tr('postScoreTitle')) + '">' + esc(tr('postScore', { x: L.fmt(it.score) })) + '</span>' : '') +
+            ' · ' + esc(ago(Number(it.ts))) + '</span>' +
             '<span class="pill ' + (it.type === 'minus' ? 'minus' : 'plus') + '">' + L.fmt(sign) + '</span></div>' +
           (it.note || it.photo
             ? '<button type="button" class="post-t post-more" data-act="post-note" data-id="' + esc(it.id) + '" data-focus="n-' + esc(it.id) + '" aria-expanded="' + !!openNotes[it.id] + '">' +
@@ -1878,10 +1903,19 @@
       top +
       '<section class="sect"><h2 id="lang-h">' + esc(tr('language')) + '</h2>' +
         '<div class="seg" role="group" aria-labelledby="lang-h">' + langButtons() + '</div></section>' +
+      showSection() +
       eduSection() +
       '<section class="sect"><h2>' + esc(tr('favsPlus')) + '</h2>' + favList('plus') + '</section>' +
       '<section class="sect"><h2>' + esc(tr('favsMinus')) + '</h2>' + favList('minus') + '</section>' +
       bottom;
+  }
+
+  /* Scorul zilei la vedere, in Profil: o bifa, oprita pentru toata lumea pana nu o pune omul. */
+  function showSection() {
+    if (!showOn()) return '';
+    return '<section class="sect" id="show"><h2>' + esc(tr('showTitle')) + '</h2>' +
+      '<label class="check"><input type="checkbox" id="show-on"' + (data.show ? ' checked' : '') + '><span>' + esc(tr('showOn')) + '</span></label>' +
+      '<p class="note">' + esc(tr('showSub')) + '</p></section>';
   }
 
   /* Modul educator, in Profil: o bifa si, cand e pornit, lista copiilor. */
@@ -2757,6 +2791,12 @@
         if (!data.edu.on) data.who = null;
         persist();
         render();
+        queueSync();
+      }
+      if (ev.target && ev.target.id === 'show-on') {
+        data.show = ev.target.checked;
+        data.showRev++;
+        persist();
         queueSync();
       }
       if (ev.target && ev.target.id === 'pic-file') pickPhoto(ev.target);

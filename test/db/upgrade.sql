@@ -1,5 +1,5 @@
 -- Trecerea unei baze create cu scriptul unei versiuni mai vechi la scriptul de acum, cu date deja in ea.
--- Se ruleaza pe o baza pornita cu SCOR_SCHEMA_FILE=test/db/schema-0.5.sql (scriptul versiunii dinainte). Orice FAIL opreste scriptul.
+-- Se ruleaza pe o baza pornita cu SCOR_SCHEMA_FILE=test/db/schema-0.6.sql (scriptul versiunii dinainte). Orice FAIL opreste scriptul.
 
 \set ON_ERROR_STOP on
 set client_min_messages = notice;
@@ -27,7 +27,7 @@ grant execute on all functions in schema t to anon, authenticated;
 insert into auth.users (id, email, encrypted_password) values (t.a(), 'ana@example.test', 'x'), (t.b(), 'bogdan@example.test', 'x');
 select t.be(t.a());
 select public.set_name('Ana');
-select t.ok(coalesce((public.sync()->>'v')::int, 2) < 6, 'inainte: baza este la o versiune mai veche a scriptului');
+select t.ok(coalesce((public.sync()->>'v')::int, 2) < 7, 'inainte: baza este la o versiune mai veche a scriptului');
 select t.ok(jsonb_array_length(public.sync(
   p_add => jsonb_build_array(
     jsonb_build_object('id', t.e(1), 'day', current_date, 'ts', t.ms(now() - interval '2 hours'), 'type', 'plus', 'pts', 10, 'key', 'gym', 'pub', true),
@@ -59,6 +59,7 @@ select t.ok((select count(*) from public.entries where photo is not null) = 0, '
 select t.ok((select count(*) from public.pulse) = 0, 'dupa: lista participantilor la "Azi pe plus" exista si este goala');
 select t.ok((select count(*) from public.entries where kid is not null) = 0 and (select count(*) from public.settings where kids is not null) = 0,
   'dupa: nicio activitate veche nu este a unui copil si nimeni nu are modul educator pornit');
+select t.ok((select count(*) from public.settings where show_score) = 0, 'dupa: nimeni nu are scorul la vedere pana nu alege');
 select t.ok((select count(*) from public.cheers) = 1 and (select favs->0->>'name' from public.settings) = 'Inot', 'dupa: incurajarile si favoritele au ramas');
 select t.ok((select count(*) from storage.buckets where id = 'photos' and not public) = 1, 'dupa: locul pentru poze exista si este privat');
 
@@ -74,7 +75,7 @@ select t.ok(
   'dupa: apelul versiunii 0.3, cu detalii, merge la fel si pastreaza incurajarea');
 select t.ok(public.sync(p_vis => jsonb_build_array(jsonb_build_object('id', t.e(2), 'pub', true)))->'entries' @> jsonb_build_array(jsonb_build_object('id', t.e(2), 'pub', true, 'cheers', 0)),
   'dupa: schimbarea de vizibilitate trimisa de o aplicatie veche merge');
-select t.ok((public.sync()->>'v')::int = 6, 'dupa: raspunsul poarta versiunea scriptului');
+select t.ok((public.sync()->>'v')::int = 7, 'dupa: raspunsul poarta versiunea scriptului');
 
 -- Ce aduce versiunea noua.
 insert into storage.objects (bucket_id, name, owner_id) values ('photos', t.a()::text || '/' || t.pic(1), t.a()::text);
@@ -92,7 +93,7 @@ update public.entries set note = 'schimbat direct', photo = null where id = t.e(
 reset role;
 select t.ok((select note || '/' || photo from public.entries where id = t.e(1)) = 'picioare, 45 de minute/' || t.pic(1), 'dupa: detaliile si poza Anei nu pot fi schimbate de Bogdan');
 select t.be(t.a());
-select t.ok(public.pulse(p_join => true) = jsonb_build_object('day', current_date, 'in', true, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', '[]'::jsonb, 'you', true, 'v', 6),
+select t.ok(public.pulse(p_join => true) = jsonb_build_object('day', current_date, 'in', true, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', '[]'::jsonb, 'you', true, 'v', 7),
   'dupa: Ana intra in "Azi pe plus" si, cu ziua ei veche pe plus, apare pe lista');
 reset role;
 select t.be(t.a());
@@ -101,6 +102,9 @@ select t.ok(public.sync(p_kids => '{"on": true, "list": [{"id": "cccccccc-0000-4
 select t.ok(public.sync(p_add => jsonb_build_array(jsonb_build_object('id', t.e(9), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 5, 'name', 'Teme', 'kid', 'cccccccc-0000-4000-8000-000000000009')))->'entries'
     @> jsonb_build_array(jsonb_build_object('id', t.e(9), 'kid', 'cccccccc-0000-4000-8000-000000000009', 'pub', false)),
   'dupa: o activitate pentru Vlad intra, privata');
+select t.ok(public.sync(p_show => true)->'show' = 'true'::jsonb, 'dupa: Ana isi poate pune scorul la vedere');
+select t.be(t.b());
+select t.ok((select x->'score' from jsonb_array_elements(public.feed()) x where x->>'author' = 'Ana' limit 1) is not null, 'dupa: Bogdan vede scorul Anei in flux');
 reset role;
 
 \warn TRECERE: toate verificarile au trecut

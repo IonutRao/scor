@@ -179,7 +179,7 @@ select t.ok((select count(*) from public.profiles) = 3, 'numele celor trei utili
 
 -- ---------------------------------------------------------------- detalii
 select t.be(t.a());
-select t.ok((public.sync()->>'v')::int = 6, 'raspunsul lui sync() poarta versiunea scriptului');
+select t.ok((public.sync()->>'v')::int = 7, 'raspunsul lui sync() poarta versiunea scriptului');
 select t.ok(public.sync()->>'name' = 'Ana', 'si numele afisat');
 select t.ok(
   public.sync(p_add => jsonb_build_array(
@@ -343,7 +343,7 @@ select t.ok((select count(*) from storage.objects) = 0, 'dupa curatenie nu mai r
 -- Participarea este la alegere. Ceilalti afla un singur lucru despre un participant: daca ziua lui este pe plus.
 -- Suma zilei cuprinde si activitatile private, dar ele nu ies niciodata la vedere.
 select t.be(t.a());
-select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'others', '[]'::jsonb, 'you', false, 'v', 6),
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 0, 'up', '[]'::jsonb, 'others', '[]'::jsonb, 'you', false, 'v', 7),
   'la inceput nimeni nu participa, iar raspunsul poarta versiunea scriptului');
 select t.ok(public.pulse(p_day => current_date, p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'Ana intra in joc');
 select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 1, 'a doua intrare nu o numara de doua ori');
@@ -352,7 +352,7 @@ select t.ok((select coalesce(sum(case when type = 'plus' then pts else -pts end)
 select t.ok(public.pulse()->'up' = jsonb_build_array('Ana') and public.pulse()->'others' = '[]'::jsonb and public.pulse()->'you' = 'true'::jsonb,
   'Ana se vede pe lista celor pe plus: pentru ea, ceilalti sunt niciunul, iar you este adevarat');
 select t.be(t.b());
-select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', jsonb_build_array('Ana'), 'you', false, 'v', 6),
+select t.ok(public.pulse() = jsonb_build_object('day', current_date, 'in', false, 'total', 1, 'up', jsonb_build_array('Ana'), 'others', jsonb_build_array('Ana'), 'you', false, 'v', 7),
   'Bogdan, fara sa participe, vede cati participa si cine e pe plus');
 select t.ok(public.pulse(p_join => true)->'in' = 'true'::jsonb and (public.pulse()->>'total')::int = 2 and public.pulse()->'up' = jsonb_build_array('Ana'),
   'Bogdan intra: doi participanti, dar fara activitati azi nu este pe plus');
@@ -417,6 +417,41 @@ select t.ok(not (public.pulse()->'up' ? 'Ana'), 'in "Azi pe plus" se numara doar
 select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(40), t.e(41), t.e(43), t.e(44), t.e(45), t.e(46), t.e(47), t.e(48), t.e(49)))->'entries') >= 0, 'activitatile de proba se sterg');
 select t.ok(public.sync(p_kids => '{"on": false, "list": []}'::jsonb)->'kids'->'on' = 'false'::jsonb, 'modul educator se poate opri');
 select t.ok(public.sync(p_kids => '"text"'::jsonb)->'kids'->'on' = 'false'::jsonb, 'o lista care nu arata a lista este ignorata (ramane cea veche)');
+reset role;
+
+-- ---------------------------------------------------------------- scorul zilei la vedere
+-- Scorul de azi apare in flux langa nume doar pentru cine a ales asta; pana atunci nimeni nu poate afla nimic din el.
+select t.be(t.a());
+select t.ok(public.sync()->'show' = 'false'::jsonb, 'la inceput scorul Anei nu este la vedere');
+select t.ok(public.sync(p_add => jsonb_build_array(
+    jsonb_build_object('id', t.e(50), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 10, 'name', 'Publica a Anei', 'pub', true),
+    jsonb_build_object('id', t.e(51), 'day', current_date, 'ts', t.ms(now()), 'type', 'minus', 'pts', 15, 'name', 'Privata a Anei'),
+    jsonb_build_object('id', t.e(52), 'day', current_date, 'ts', t.ms(now()), 'type', 'plus', 'pts', 20, 'name', 'A unui copil', 'kid', 'cccccccc-0000-4000-8000-000000000002'),
+    jsonb_build_object('id', t.e(53), 'day', current_date - 1, 'ts', t.ms(now() - interval '1 day'), 'type', 'plus', 'pts', 7, 'name', 'Ieri', 'pub', true)
+  ))->'rejected' = '[]'::jsonb, 'Ana: +10 public, -15 privat, +20 pentru un copil, +7 ieri');
+reset role;
+-- Scorul ei real de azi, fara copii, calculat direct (fixtura are si alte activitati de azi).
+select coalesce(sum(case when type = 'plus' then pts else -pts end), 0) as exp_a from public.entries where user_id = t.a() and day = current_date and kid is null \gset
+select t.be(t.b());
+select t.ok((select x->'score' from jsonb_array_elements(public.feed(p_day => current_date)) x where x->>'id' = t.e(50)::text) = 'null'::jsonb,
+  'Bogdan nu vede scorul Anei cat timp ea nu l-a pus la vedere');
+select t.ok(public.day_score(t.a(), current_date) is null, 'nici intreband direct');
+select t.be(t.a());
+select t.ok(public.sync(p_show => true)->'show' = 'true'::jsonb, 'Ana isi pune scorul la vedere');
+select t.be(t.b());
+select t.ok((select x->'score' from jsonb_array_elements(public.feed(p_day => current_date)) x where x->>'id' = t.e(50)::text) = to_jsonb(:exp_a::int),
+  'acum Bogdan vede scorul ei de azi, cu tot cu activitatea privata si fara cea a copilului');
+select t.ok((select x->'score' from jsonb_array_elements(public.feed()) x where x->>'id' = t.e(50)::text) = to_jsonb(:exp_a::int), 'fara p_day se ia ziua serverului');
+select t.ok(public.day_score(t.a(), current_date - 1) = 7, 'ziua de ieri se poate cere (fusul orar al celui care se uita)');
+select t.ok(public.day_score(t.a(), current_date - 30) = :exp_a, 'dar o zi mai departata este adusa la azi: nu se poate citi istoricul');
+select t.ok(public.day_score(t.a(), '1999-01-01') = :exp_a, 'oricat de departe');
+select t.ok(:exp_a <> 10, 'si nu este doar suma activitatilor publice');
+select t.be(t.a());
+select t.ok(public.sync(p_show => false)->'show' = 'false'::jsonb, 'Ana isi ascunde scorul la loc');
+select t.be(t.b());
+select t.ok(public.day_score(t.a(), current_date) is null, 'si Bogdan nu il mai vede');
+select t.be(t.a());
+select t.ok(jsonb_array_length(public.sync(p_del => jsonb_build_array(t.e(50), t.e(51), t.e(52), t.e(53)))->'entries') >= 0, 'activitatile de proba se sterg');
 reset role;
 
 -- ---------------------------------------------------------------- stergerea contului
